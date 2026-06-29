@@ -16,6 +16,69 @@ source "$SCRIPT_DIR/lib/switch.sh"
 init_staging_codex
 init_staging_claude
 
+# ── startup summary ────────────────────────────────────
+
+_show_codex_info() {
+  [ ! -f "$CODEX_CONFIG" ] && return
+  local provider model tokens provider_count
+  provider=$(co_get_current_provider)
+  model=$(co_get_current_model)
+  tokens=$(co_get_max_tokens)
+  provider_count=$(co_parse_providers | wc -l)
+
+  echo -e "  ${BOLD}Codex${NC}  ${DIM}${CODEX_CONFIG}${NC}"
+  echo -e "    provider: ${GREEN}${provider}${NC}"
+  echo -e "    model:    ${GREEN}${model}${NC}"
+  [ -n "$tokens" ] && echo -e "    max_tok:  ${GREEN}${tokens}${NC}"
+  echo -e "    providers: ${GREEN}${provider_count}${NC} 个"
+}
+
+_show_claude_info() {
+  [ ! -f "$CLAUDE_CONFIG" ] && return
+  local provider tier tokens provider_count
+  provider=$(cl_get_current_provider)
+  tier=$(_cl_json_get "model")
+  tokens=$(cl_get_max_tokens)
+  provider_count=$(cl_parse_providers | wc -l)
+
+  echo -e "  ${BOLD}Claude Code${NC}  ${DIM}${CLAUDE_CONFIG}${NC}"
+  echo -e "    provider: ${GREEN}${provider}${NC}"
+  echo -e "    激活 tier: ${GREEN}${tier:-未设置}${NC}"
+
+  # Show 3 model IDs
+  local models_raw
+  models_raw=$(cl_get_models)
+  if [ -n "$models_raw" ]; then
+    while IFS='|' read -r mtier mid active; do
+      local mark=" "
+      [ -n "$active" ] && mark="${GREEN}✓${NC}"
+      echo -e "    ${mark} ${mtier}: ${GREEN}${mid:-未设置}${NC}"
+    done <<< "$models_raw"
+  fi
+
+  [ -n "$tokens" ] && echo -e "    max_tok:  ${GREEN}${tokens}${NC}"
+  echo -e "    providers: ${GREEN}${provider_count}${NC} 个"
+}
+
+show_startup_summary() {
+  local has_codex=0 has_claude=0
+  [ -f "$CODEX_CONFIG" ] && has_codex=1
+  [ -f "$CLAUDE_CONFIG" ] && has_claude=1
+
+  if [ "$has_codex" -eq 0 ] && [ "$has_claude" -eq 0 ]; then
+    return
+  fi
+
+  echo ""
+  echo -e "${CYAN}━━━ 当前配置 ━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+  [ "$has_codex" -eq 1 ] && _show_codex_info && echo ""
+  [ "$has_claude" -eq 1 ] && _show_claude_info && echo ""
+  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+}
+
+show_startup_summary
+
 # ── staging indicator ───────────────────────────────────
 
 _staging_badge() {
