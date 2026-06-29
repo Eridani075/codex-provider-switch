@@ -469,6 +469,7 @@ do_model_claude() {
   case "$choice" in
     *保持*|*↩️*|"")  return ;;
     *编辑*|*✏️*)
+      # Pick which tier to edit
       echo ""
       echo -e "${CYAN}编辑模型 ID${NC}"
       local edit_options=()
@@ -487,12 +488,58 @@ do_model_claude() {
         *)
           local edit_tier
           edit_tier=$(echo "$edit_choice" | awk '{print $1}')
-          echo ""
-          read -rp "输入 ${edit_tier} 的模型 ID: " new_id
-          if [ -n "$new_id" ]; then
-            set_model_id "$edit_tier" "$new_id"
-            echo -e "${GREEN}${edit_tier} 已更新为: ${BOLD}${new_id}${NC}"
-          fi
+
+          # Fetch models from API
+          local api_url api_token api_models
+          api_url=$(cl_get_provider_url)
+          api_token=$(cl_get_provider_token)
+
+          echo -e "${DIM}从 ${api_url}/models 获取模型列表...${NC}"
+          while true; do
+            api_models=$(fetch_models "$api_url" "$api_token")
+            [ -n "$api_models" ] && break
+            echo -e "${RED}无法获取模型列表${NC}"
+            local retry
+            retry=$(choose "操作 > " "🔄  重试" "✏️  手动输入" "↩️  返回")
+            case "$retry" in
+              *重试*) continue ;;
+              *手动*) read -rp "输入 ${edit_tier} 的模型 ID: " new_id
+                      if [ -n "$new_id" ]; then
+                        set_model_id "$edit_tier" "$new_id"
+                        echo -e "${GREEN}${edit_tier} 已更新为: ${BOLD}${new_id}${NC}"
+                      fi
+                      return ;;
+              *) return ;;
+            esac
+          done
+
+          # Build options from fetched models
+          local model_options=()
+          while IFS= read -r m; do
+            model_options+=("${m}")
+          done <<< "$api_models"
+          model_options+=("✏️  手动输入")
+          model_options+=("↩️  返回")
+
+          local picked
+          picked=$(choose "${edit_tier} 模型 > " "${model_options[@]}")
+
+          case "$picked" in
+            *返回*|*↩️*|"")  return ;;
+            *手动*|*✏️*)
+              read -rp "输入 ${edit_tier} 的模型 ID: " new_id
+              if [ -n "$new_id" ]; then
+                set_model_id "$edit_tier" "$new_id"
+                echo -e "${GREEN}${edit_tier} 已更新为: ${BOLD}${new_id}${NC}"
+              fi
+              ;;
+            *)
+              local picked_id
+              picked_id=$(echo "$picked" | sed 's/ *✓.*//')
+              set_model_id "$edit_tier" "$picked_id"
+              echo -e "${GREEN}${edit_tier} 已更新为: ${BOLD}${picked_id}${NC}"
+              ;;
+          esac
           ;;
       esac
       ;;
