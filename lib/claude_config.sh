@@ -291,7 +291,15 @@ try:
         data = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
     data = {}
+
 data['hasCompletedOnboarding'] = True
+
+# Ensure ANTHROPIC_API_KEY is set (Claude Code checks this for first-launch login)
+env = data.setdefault('env', {})
+auth_token = env.get('ANTHROPIC_AUTH_TOKEN', '')
+if auth_token and not env.get('ANTHROPIC_API_KEY'):
+    env['ANTHROPIC_API_KEY'] = auth_token
+
 with open(path, 'w') as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
     f.write('\n')
