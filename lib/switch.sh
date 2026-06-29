@@ -187,34 +187,91 @@ do_show_config() {
   fi
 }
 
-PRESET_MODELS=(
-  "gpt-5.5"
-  "gpt-5.4"
-  "gpt-5.4-mini"
-  "gpt-4.1"
-  "o3"
-  "o4-mini"
-  "claude-sonnet-4-6"
-  "claude-opus-4-6"
-  "gemini-2.5-pro"
-  "deepseek-chat"
-  "codex-auto-review"
-)
+# Fetch available models from provider's /v1/models endpoint.
+# Args: base_url, token
+# Prints one model id per line to stdout.
+fetch_models() {
+  local base_url="$1" token="$2"
+  local url="${base_url%/}/models"
+
+  local response
+  if [ -n "$token" ]; then
+    response=$(curl -sS --fail --max-time 10 \
+      -H "Authorization: Bearer ${token}" \
+      -H "Content-Type: application/json" \
+      "$url" 2>&1)
+  else
+    response=$(curl -sS --fail --max-time 10 \
+      -H "Content-Type: application/json" \
+      "$url" 2>&1)
+  fi
+
+  if [ $? -ne 0 ]; then
+    echo "请求失败: $url" >&2
+    echo "$response" >&2
+    return 1
+  fi
+
+  python3 -c "
+import sys, json
+try:
+    data = json.loads(sys.stdin.read())
+    models = data.get('data', data) if isinstance(data, dict) else data
+    if isinstance(models, list):
+        ids = sorted(m.get('id', '') for m in models if isinstance(m, dict) and m.get('id'))
+        if ids:
+            print('\n'.join(ids))
+        else:
+            sys.exit(1)
+    else:
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+" <<< "$response"
+}
 
 do_model() {
   local current
   current=$(get_current_model)
 
+  # Get current provider's base_url and token
+  local provider_key
+  provider_key=$(get_current_provider)
+  provider_key="${provider_key% (默认)}"
+
+  local provider_line
+  provider_line=$(parse_providers | while IFS='|' read -r key name url wire token model; do
+    [ "$key" = "$provider_key" ] && echo "${key}|${name}|${url}|${wire}|${token}|${model}" && break
+  done)
+
+  if [ -z "$provider_line" ]; then
+    echo -e "${RED}未找到当前 provider 配置，请先添加。${NC}"
+    return
+  fi
+
+  local base_url token
+  base_url=$(echo "$provider_line" | cut -d'|' -f3)
+  token=$(echo "$provider_line" | cut -d'|' -f5)
+
   echo -e "${CYAN}当前模型: ${BOLD}${GREEN}${current}${NC}"
+  echo -e "${DIM}从 ${base_url}/models 获取模型列表...${NC}"
   echo ""
 
-  # Build options: presets + "自定义" + "保持不变"
+  local models_raw
+  models_raw=$(fetch_models "$base_url" "$token")
+
+  if [ -z "$models_raw" ]; then
+    echo -e "${RED}无法获取模型列表，请检查 provider 配置和网络。${NC}"
+    return
+  fi
+
+  # Build options from fetched models
   local options=()
-  for m in "${PRESET_MODELS[@]}"; do
+  while IFS= read -r m; do
     local marker=""
-    [[ "$m" == "$current" ]] && marker=" ${GREEN}✓${NC}"
+    [ "$m" = "$current" ] && marker=" ${GREEN}✓${NC}"
     options+=("${m}${marker}")
-  done
+  done <<< "$models_raw"
   options+=("✏️  自定义输入")
   options+=("↩️  保持不变")
 
@@ -225,13 +282,12 @@ do_model() {
     *保持*|*↩️*|"")  return ;;
     *自定义*|*✏️*)
       read -rp "输入模型名: " custom_model
-      if [[ -n "$custom_model" ]]; then
+      if [ -n "$custom_model" ]; then
         set_current_model "$custom_model"
         echo -e "${GREEN}已切换到: ${BOLD}${custom_model}${NC}"
       fi
       ;;
     *)
-      # Extract model name (strip the checkmark)
       local model_name
       model_name=$(echo "$choice" | sed 's/ *✓.*//')
       set_current_model "$model_name"
