@@ -176,40 +176,46 @@ choose_backend() {
   echo -e "${BOLD}${CYAN}Provider Switch${NC}"
   echo -e "${CYAN}━━━━━━━━━━━━━━${NC}"
   echo ""
-  echo -e "  选择配置目标:"
-  echo ""
 
   local has_codex=0 has_claude=0
   [ -f "$CODEX_CONFIG" ] && has_codex=1
   [ -f "$CLAUDE_CONFIG" ] && has_claude=1
 
-  # If only one config exists, skip selection
-  if [ "$has_codex" -eq 1 ] && [ "$has_claude" -eq 0 ]; then
-    BACKEND="codex"
-    show_codex_menu
-    return
-  elif [ "$has_codex" -eq 0 ] && [ "$has_claude" -eq 1 ]; then
-    BACKEND="claude"
-    show_claude_menu
-    return
-  elif [ "$has_codex" -eq 0 ] && [ "$has_claude" -eq 0 ]; then
-    echo -e "${RED}未检测到 Codex 或 Claude Code 配置文件。${NC}"
-    echo -e "${DIM}  Codex:  ${CODEX_CONFIG}${NC}"
-    echo -e "${DIM}  Claude: ${CLAUDE_CONFIG}${NC}"
-    exit 1
+  # Always show selection, but mark unavailable backends
+  local options=()
+  if [ "$has_codex" -eq 1 ]; then
+    options+=("Codex")
+  else
+    options+=("Codex ${DIM}(未检测到 ${CODEX_CONFIG})${NC}")
   fi
+  if [ "$has_claude" -eq 1 ]; then
+    options+=("Claude Code")
+  else
+    options+=("Claude Code ${DIM}(未检测到 ${CLAUDE_CONFIG})${NC}")
+  fi
+  options+=("❌  退出")
 
-  # Both exist, let user choose
   local choice
-  choice=$(choose "配置目标 > " \
-    "Codex" \
-    "Claude Code" \
-    "❌  退出")
+  choice=$(choose "配置目标 > " "${options[@]}")
 
   case "$choice" in
-    *Codex*)   BACKEND="codex";  show_codex_menu ;;
-    *Claude*)  BACKEND="claude"; show_claude_menu ;;
-    *)         exit 0 ;;
+    *Codex*)
+      if [ "$has_codex" -eq 0 ]; then
+        echo -e "${RED}未检测到 Codex 配置文件: ${CODEX_CONFIG}${NC}"
+        read -rp "按回车返回..."; choose_backend; return
+      fi
+      BACKEND="codex"
+      show_codex_menu
+      ;;
+    *Claude*)
+      if [ "$has_claude" -eq 0 ]; then
+        echo -e "${RED}未检测到 Claude Code 配置文件: ${CLAUDE_CONFIG}${NC}"
+        read -rp "按回车返回..."; choose_backend; return
+      fi
+      BACKEND="claude"
+      show_claude_menu
+      ;;
+    *) exit 0 ;;
   esac
 }
 
