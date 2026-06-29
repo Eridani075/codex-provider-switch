@@ -239,6 +239,8 @@ do_model() {
       ;;
   esac
 }
+
+do_show_all() {
   local current
   current=$(get_current_provider)
   current="${current% (默认)}"
