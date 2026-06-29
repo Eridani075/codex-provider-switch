@@ -1,0 +1,8 @@
+[project]
+name = "codex-provider-switch"
+version = "0.1.0"
+description = "Codex desktop provider switcher and plugin unlocker"
+requires-python = ">=3.10"
+dependencies = [
+    "websocket-client>=1.0",
+]
