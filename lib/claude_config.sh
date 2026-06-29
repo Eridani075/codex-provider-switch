@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 # claude_config.sh - Claude Code settings.json with staging
+# Real config structure:
+#   env.ANTHROPIC_BASE_URL          → provider URL
+#   env.ANTHROPIC_AUTH_TOKEN        → API key
+#   env.ANTHROPIC_DEFAULT_{TIER}_MODEL      → model ID
+#   env.ANTHROPIC_DEFAULT_{TIER}_MODEL_NAME → model display name
+#   model → active tier (opus/sonnet/haiku)
 # Source this file, don't run directly.
 
 CLAUDE_CONFIG="${CLAUDE_CONFIG:-$HOME/.claude/settings.json}"
@@ -40,7 +46,6 @@ discard_staging_claude() {
   fi
 }
 
-# Returns the active config file (staged or real)
 _cl_cfg() {
   if [ -n "$CLAUDE_STAGED" ] && [ -f "$CLAUDE_STAGED" ]; then
     echo "$CLAUDE_STAGED"
@@ -49,24 +54,49 @@ _cl_cfg() {
   fi
 }
 
-# ── JSON helpers (all use staged file) ──────────────────
+# ── Python JSON helpers ─────────────────────────────────
 
-_cl_json_get() {
-  local key="$1"
+_cl_read() {
   local cfg
   cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
-try:
-    data = json.load(open(sys.argv[1]))
-    val = data.get(sys.argv[2], '')
-    print(val if isinstance(val, str) else json.dumps(val) if val else '')
-except Exception:
-    print('')
-" "$cfg" "$key" 2>/dev/null
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+# Navigate dot-separated path: 'env.ANTHROPIC_BASE_URL' → data['env']['ANTHROPIC_BASE_URL']
+keys = sys.argv[2].split('.')
+val = data
+for k in keys:
+    if isinstance(val, dict):
+        val = val.get(k, '')
+    else:
+        val = ''
+        break
+print(val if isinstance(val, str) else json.dumps(val) if val else '')
+" "$cfg" "$1" 2>/dev/null
 }
 
-_cl_json_set() {
+_cl_write_env() {
+  local key="$1" val="$2"
+  local cfg
+  cfg="$(_cl_cfg)"
+  python3 -c "
+import sys, json
+path = sys.argv[1]
+ekey = sys.argv[2]
+eval_ = sys.argv[3]
+with open(path) as f:
+    data = json.load(f)
+if 'env' not in data:
+    data['env'] = {}
+data['env'][ekey] = eval_
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+    f.write('\n')
+" "$cfg" "$key" "$val"
+}
+
+_cl_write_top() {
   local key="$1" val="$2"
   local cfg
   cfg="$(_cl_cfg)"
@@ -75,11 +105,8 @@ import sys, json
 path = sys.argv[1]
 key = sys.argv[2]
 val = sys.argv[3]
-try:
-    with open(path) as f:
-        data = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
-    data = {}
+with open(path) as f:
+    data = json.load(f)
 try:
     data[key] = json.loads(val)
 except (json.JSONDecodeError, ValueError):
@@ -90,7 +117,67 @@ with open(path, 'w') as f:
 " "$cfg" "$key" "$val"
 }
 
-# ── 3-model support (opus/sonnet/haiku) ──────────────────
+# ── Provider (reads/writes env vars) ───────────────────
+
+cl_get_current_provider() {
+  local url
+  url=$(_cl_read "env.ANTHROPIC_BASE_URL")
+  if [ -n "$url" ]; then
+    echo "$url"
+  else
+    echo "(未配置)"
+  fi
+}
+
+cl_set_current_provider() {
+  local url="$1" token="$2"
+  _cl_write_env "ANTHROPIC_BASE_URL" "$url"
+  if [ -n "$token" ]; then
+    _cl_write_env "ANTHROPIC_AUTH_TOKEN" "$token"
+  fi
+}
+
+# Parse provider info from env vars.
+# Output: url|token (single line, Claude Code only has one provider)
+cl_parse_providers() {
+  local cfg
+  cfg="$(_cl_cfg)"
+  python3 -c "
+import sys, json
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+env = data.get('env', {})
+url = env.get('ANTHROPIC_BASE_URL', '')
+token = env.get('ANTHROPIC_AUTH_TOKEN', '')
+if url:
+    masked = token[:8] + '****' if len(token) > 8 else token
+    print(f'{url}|{masked}')
+" "$cfg" 2>/dev/null
+}
+
+cl_get_provider_url() {
+  _cl_read "env.ANTHROPIC_BASE_URL"
+}
+
+cl_get_provider_token() {
+  _cl_read "env.ANTHROPIC_AUTH_TOKEN"
+}
+
+# Claude Code doesn't have multi-provider CRUD.
+# These are no-ops kept for interface compatibility.
+cl_append_provider() {
+  echo -e "${YELLOW}Claude Code 只支持单 provider，使用「切换 Provider」修改${NC}"
+}
+cl_update_provider_fields() {
+  local url="$2" token="$3"
+  [ -n "$url" ] && _cl_write_env "ANTHROPIC_BASE_URL" "$url"
+  [ -n "$token" ] && _cl_write_env "ANTHROPIC_AUTH_TOKEN" "$token"
+}
+cl_remove_provider() {
+  echo -e "${YELLOW}Claude Code 不支持删除 provider，请直接切换${NC}"
+}
+
+# ── Model tiers (opus/sonnet/haiku) ─────────────────────
 
 CLAUDE_MODEL_TIERS="opus sonnet haiku"
 
@@ -99,17 +186,15 @@ cl_get_models() {
   cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
-try:
-    with open(sys.argv[1]) as f:
-        data = json.load(f)
-except Exception:
-    sys.exit(0)
-models = data.get('models', {})
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+env = data.get('env', {})
+active_tier = data.get('model', '')
 for tier in ['opus', 'sonnet', 'haiku']:
-    mid = models.get(tier, '')
-    active = data.get('model', '') == tier
-    mark = '*' if active else ''
-    print(f'{tier}|{mid}|{mark}')
+    key = f'ANTHROPIC_DEFAULT_{tier.upper()}_MODEL'
+    mid = env.get(key, '')
+    active = '*' if tier == active_tier else ''
+    print(f'{tier}|{mid}|{active}')
 " "$cfg" 2>/dev/null
 }
 
@@ -118,19 +203,14 @@ cl_get_current_model() {
   cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
-try:
-    with open(sys.argv[1]) as f:
-        data = json.load(f)
-except Exception:
-    print('(未设置)')
-    sys.exit(0)
-model = data.get('model', '')
-models = data.get('models', {})
-if model in models:
-    mid = models[model]
-    print(f'{model} ({mid})' if mid else model)
-elif model:
-    print(model)
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+env = data.get('env', {})
+tier = data.get('model', '')
+if tier:
+    key = f'ANTHROPIC_DEFAULT_{tier.upper()}_MODEL'
+    mid = env.get(key, '')
+    print(f'{tier} ({mid})' if mid else tier)
 else:
     print('(未设置)')
 " "$cfg" 2>/dev/null
@@ -138,185 +218,24 @@ else:
 
 cl_set_current_model() {
   local tier="$1"
-  local is_tier=0
-  for t in $CLAUDE_MODEL_TIERS; do
-    [ "$tier" = "$t" ] && is_tier=1 && break
-  done
-  _cl_json_set "model" "$tier"
+  _cl_write_top "model" "$tier"
 }
 
 cl_set_model_id() {
   local tier="$1" model_id="$2"
-  local cfg
-  cfg="$(_cl_cfg)"
-  python3 -c "
-import sys, json
-path = sys.argv[1]
-tier = sys.argv[2]
-mid = sys.argv[3]
-try:
-    with open(path) as f:
-        data = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
-    data = {}
-models = data.get('models', {})
-models[tier] = mid
-data['models'] = models
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2, ensure_ascii=False)
-    f.write('\n')
-" "$cfg" "$tier" "$model_id"
+  local env_key="ANTHROPIC_DEFAULT_${tier^^}_MODEL"
+  _cl_write_env "$env_key" "$model_id"
 }
 
-# ── context size ─────────────────────────────────────────
+# ── Context size ─────────────────────────────────────────
+# Claude Code doesn't have a standard max_tokens field in settings.json
+# Store it as a custom field for reference
 
 cl_get_max_tokens() {
-  local cfg
-  cfg="$(_cl_cfg)"
-  python3 -c "
-import sys, json
-try:
-    with open(sys.argv[1]) as f:
-        data = json.load(f)
-    val = data.get('max_tokens', '')
-    print(val if val else '')
-except Exception:
-    print('')
-" "$cfg" 2>/dev/null
+  _cl_read "max_tokens"
 }
 
 cl_set_max_tokens() {
   local tokens="$1"
-  if [ -n "$tokens" ]; then
-    _cl_json_set "max_tokens" "$tokens"
-  fi
-}
-
-# ── providers ────────────────────────────────────────────
-
-cl_parse_providers() {
-  local cfg
-  cfg="$(_cl_cfg)"
-  python3 -c "
-import sys, json
-try:
-    with open(sys.argv[1]) as f:
-        data = json.load(f)
-except Exception:
-    sys.exit(0)
-providers = data.get('providers', {})
-for key, cfg in sorted(providers.items()):
-    if isinstance(cfg, dict):
-        name = cfg.get('name', key)
-        url = cfg.get('base_url', '')
-        token = cfg.get('api_key', '')
-        model = cfg.get('model', '')
-        print(f'{key}|{name}|{url}||{token}|{model}')
-" "$cfg" 2>/dev/null
-}
-
-cl_get_current_provider() {
-  local cfg
-  cfg="$(_cl_cfg)"
-  python3 -c "
-import sys, json
-try:
-    with open(sys.argv[1]) as f:
-        data = json.load(f)
-except Exception:
-    print('(未配置)')
-    sys.exit(0)
-providers = data.get('providers', {})
-active = data.get('active_provider', '')
-if active and active in providers:
-    print(active)
-elif providers:
-    print(list(providers.keys())[0])
-else:
-    print('(未配置)')
-" "$cfg" 2>/dev/null
-}
-
-cl_set_current_provider() {
-  local provider="$1"
-  _cl_json_set "active_provider" "$provider"
-}
-
-cl_append_provider() {
-  local id="$1" name="$2" url="$3" key="$4"
-  local cfg
-  cfg="$(_cl_cfg)"
-  python3 -c "
-import sys, json
-path = sys.argv[1]
-pid = sys.argv[2]
-name = sys.argv[3]
-url = sys.argv[4]
-akey = sys.argv[5]
-try:
-    with open(path) as f:
-        data = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
-    data = {}
-providers = data.get('providers', {})
-providers[pid] = {
-    'name': name,
-    'base_url': url,
-    'api_key': akey,
-}
-data['providers'] = providers
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2, ensure_ascii=False)
-    f.write('\n')
-" "$cfg" "$id" "$name" "$url" "$key"
-}
-
-cl_update_provider_fields() {
-  local provider="$1" new_url="$2" new_token="$3"
-  local cfg
-  cfg="$(_cl_cfg)"
-  python3 -c "
-import sys, json
-path = sys.argv[1]
-pid = sys.argv[2]
-new_url = sys.argv[3]
-new_token = sys.argv[4]
-try:
-    with open(path) as f:
-        data = json.load(f)
-except Exception:
-    sys.exit(1)
-providers = data.get('providers', {})
-if pid in providers:
-    if new_url:
-        providers[pid]['base_url'] = new_url
-    if new_token:
-        providers[pid]['api_key'] = new_token
-    with open(path, 'w') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-        f.write('\n')
-" "$cfg" "$provider" "$new_url" "$new_token"
-}
-
-cl_remove_provider() {
-  local provider="$1"
-  local cfg
-  cfg="$(_cl_cfg)"
-  python3 -c "
-import sys, json
-path = sys.argv[1]
-pid = sys.argv[2]
-try:
-    with open(path) as f:
-        data = json.load(f)
-except Exception:
-    sys.exit(0)
-providers = data.get('providers', {})
-providers.pop(pid, None)
-if data.get('active_provider') == pid:
-    del data['active_provider']
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2, ensure_ascii=False)
-    f.write('\n')
-" "$cfg" "$provider"
+  [ -n "$tokens" ] && _cl_write_top "max_tokens" "$tokens"
 }

@@ -6,6 +6,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UV_RUN="${UV_RUN:-uv run --directory "$SCRIPT_DIR/.."}"
 
 do_switch() {
+  if [ "$BACKEND" = "claude" ]; then
+    _do_switch_claude
+  else
+    _do_switch_codex
+  fi
+}
+
+_do_switch_codex() {
   local current
   current=$(get_current_provider)
 
@@ -27,7 +35,37 @@ do_switch() {
 
   set_current_provider "$new_key"
   echo -e "${GREEN}已切换到: ${BOLD}${new_key}${NC}"
-  [ "$BACKEND" != "claude" ] && echo -e "${DIM}提示: 使用「显示所有会话」可查看跨 provider 的全部聊天记录${NC}"
+  echo -e "${DIM}提示: 使用「显示所有会话」可查看跨 provider 的全部聊天记录${NC}"
+}
+
+_do_switch_claude() {
+  local cur_url cur_token
+  cur_url=$(cl_get_provider_url)
+  cur_token=$(cl_get_provider_token)
+
+  echo -e "${CYAN}切换 Claude Code Provider${NC}"
+  echo ""
+  echo -e "  当前 URL:   ${GREEN}${cur_url:-未设置}${NC}"
+  local masked="(未设置)"
+  [ -n "$cur_token" ] && masked="${cur_token:0:8}****"
+  echo -e "  当前 Token: ${GREEN}${masked}${NC}"
+  echo ""
+  echo -e "  ${DIM}留空保持不变${NC}"
+  echo ""
+
+  read -rp "新的 Base URL: " new_url
+  read -rp "新的 API Key:  " new_token
+
+  new_url="${new_url:-$cur_url}"
+  new_token="${new_token:-$cur_token}"
+
+  if [ -z "$new_url" ]; then
+    echo -e "${RED}URL 不能为空${NC}"
+    return
+  fi
+
+  cl_set_current_provider "$new_url" "$new_token"
+  echo -e "${GREEN}已更新 provider${NC}"
 }
 
 do_add() {
@@ -168,53 +206,60 @@ do_show_config() {
   echo -e "${CYAN}${backend_label} 配置摘要${NC}"
   echo ""
 
-  local current
-  current=$(get_current_provider)
-  echo -e "  provider = ${BOLD}${GREEN}${current}${NC}"
-
-  local model tokens
-  model=$(get_current_model)
-  echo -e "  model = ${BOLD}${GREEN}${model}${NC}"
-
-  tokens=$(get_max_tokens)
-  [ -n "$tokens" ] && echo -e "  max_tokens = ${BOLD}${GREEN}${tokens}${NC}"
-
-  # Claude Code: show all 3 model tiers
   if [ "$BACKEND" = "claude" ]; then
+    local url token model tokens models_raw
+    url=$(cl_get_provider_url)
+    token=$(cl_get_provider_token)
+    model=$(get_current_model)
+    tokens=$(get_max_tokens)
+
+    echo -e "${BOLD}Provider:${NC}"
+    echo -e "  URL:   ${GREEN}${url:-未设置}${NC}"
+    local masked="(未设置)"
+    [ -n "$token" ] && masked="${token:0:8}****"
+    echo -e "  Token: ${GREEN}${masked}${NC}"
     echo ""
-    echo -e "${BOLD}模型配置:${NC}"
-    local models_raw
+
+    echo -e "${BOLD}模型:${NC}"
+    echo -e "  激活: ${GREEN}${model}${NC}"
     models_raw=$(get_models)
     if [ -n "$models_raw" ]; then
       while IFS='|' read -r tier mid active; do
         local marker=" "
         [ -n "$active" ] && marker="${GREEN}✓${NC}"
-        local display="${mid:-未设置}"
-        echo -e "  ${marker} ${BOLD}${tier}${NC}: ${display}"
+        echo -e "  ${marker} ${BOLD}${tier}${NC}: ${GREEN}${mid:-未设置}${NC}"
       done <<< "$models_raw"
     fi
-  fi
-
-  echo ""
-
-  local providers
-  providers=$(parse_providers)
-
-  if [[ -n "$providers" ]]; then
-    echo -e "${BOLD}已配置的 Providers:${NC}"
-    echo "$providers" | while IFS='|' read -r key name url wire token model; do
-      local marker=" "
-      [[ "$key" == "${current% (默认)}" ]] && marker="${GREEN}✓${NC}"
-      local masked_token="****"
-      [[ -z "$token" ]] && masked_token="(无)"
-      echo -e "  ${marker} ${BOLD}${key}${NC}"
-      echo -e "    名称: ${name}"
-      echo -e "    URL:  ${url}"
-      echo -e "    Key:  ${masked_token}"
-      echo ""
-    done
+    [ -n "$tokens" ] && echo -e "\n  max_tokens: ${GREEN}${tokens}${NC}"
   else
-    echo -e "${YELLOW}无自定义 provider${NC}"
+    local current model tokens
+    current=$(get_current_provider)
+    model=$(get_current_model)
+    tokens=$(get_max_tokens)
+
+    echo -e "  provider = ${BOLD}${GREEN}${current}${NC}"
+    echo -e "  model    = ${BOLD}${GREEN}${model}${NC}"
+    [ -n "$tokens" ] && echo -e "  max_tok  = ${BOLD}${GREEN}${tokens}${NC}"
+
+    echo ""
+    local providers
+    providers=$(parse_providers)
+    if [[ -n "$providers" ]]; then
+      echo -e "${BOLD}已配置的 Providers:${NC}"
+      echo "$providers" | while IFS='|' read -r key name url wire token model; do
+        local marker=" "
+        [[ "$key" == "${current% (默认)}" ]] && marker="${GREEN}✓${NC}"
+        local masked_token="****"
+        [[ -z "$token" ]] && masked_token="(无)"
+        echo -e "  ${marker} ${BOLD}${key}${NC}"
+        echo -e "    名称: ${name}"
+        echo -e "    URL:  ${url}"
+        echo -e "    Key:  ${masked_token}"
+        echo ""
+      done
+    else
+      echo -e "${YELLOW}无自定义 provider${NC}"
+    fi
   fi
 }
 

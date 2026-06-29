@@ -35,17 +35,15 @@ _show_codex_info() {
 
 _show_claude_info() {
   [ ! -f "$CLAUDE_CONFIG" ] && return
-  local provider tier tokens provider_count
-  provider=$(cl_get_current_provider)
-  tier=$(_cl_json_get "model")
+  local url tier tokens
+  url=$(cl_get_provider_url)
+  tier=$(_cl_read "model")
   tokens=$(cl_get_max_tokens)
-  provider_count=$(cl_parse_providers | wc -l)
 
   echo -e "  ${BOLD}Claude Code${NC}  ${DIM}${CLAUDE_CONFIG}${NC}"
-  echo -e "    provider: ${GREEN}${provider}${NC}"
-  echo -e "    激活 tier: ${GREEN}${tier:-未设置}${NC}"
+  echo -e "    URL:   ${GREEN}${url:-未设置}${NC}"
+  echo -e "    激活: ${GREEN}${tier:-未设置}${NC}"
 
-  # Show 3 model IDs
   local models_raw
   models_raw=$(cl_get_models)
   if [ -n "$models_raw" ]; then
@@ -56,8 +54,7 @@ _show_claude_info() {
     done <<< "$models_raw"
   fi
 
-  [ -n "$tokens" ] && echo -e "    max_tok:  ${GREEN}${tokens}${NC}"
-  echo -e "    providers: ${GREEN}${provider_count}${NC} 个"
+  [ -n "$tokens" ] && echo -e "    max_tok: ${GREEN}${tokens}${NC}"
 }
 
 show_startup_summary() {
