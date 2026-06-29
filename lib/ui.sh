@@ -2,15 +2,15 @@
 # ui.sh - Interactive UI helpers (fzf with fallback)
 # Source this file, don't run directly.
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-BOLD='\033[1m'
-DIM='\033[2m'
-NC='\033[0m'
+# Colors (must use $'...' so printf gets real ESC bytes, not literal \033)
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[0;33m'
+CYAN=$'\033[0;36m'
+MAGENTA=$'\033[0;35m'
+BOLD=$'\033[1m'
+DIM=$'\033[2m'
+NC=$'\033[0m'
 
 HAS_FZF=0
 command -v fzf >/dev/null 2>&1 && HAS_FZF=1
