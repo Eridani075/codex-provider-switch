@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# config.sh - Codex config.toml reading/writing
+# config.sh - Codex config.toml reading/writing with staging
 # Source this file, don't run directly.
 
 CODEX_CONFIG="${CODEX_CONFIG:-$HOME/.codex/config.toml}"
@@ -21,6 +21,47 @@ _detect_backend() {
   fi
 }
 _detect_backend
+
+# ── staging ─────────────────────────────────────────────
+
+# All co_* read/write functions use CODEX_STAGED instead of CODEX_CONFIG.
+# On init: copy real config → temp, point CODEX_STAGED there.
+# On apply: backup real, move staged → real.
+# On discard: delete staged.
+
+CODEX_STAGED=""
+
+init_staging_codex() {
+  [ ! -f "$CODEX_CONFIG" ] && return
+  CODEX_STAGED=$(mktemp)
+  cp "$CODEX_CONFIG" "$CODEX_STAGED"
+}
+
+has_codex_staging() {
+  [ -n "$CODEX_STAGED" ] && [ -f "$CODEX_STAGED" ]
+}
+
+apply_staging_codex() {
+  if ! has_codex_staging; then
+    echo -e "${YELLOW}Codex: 没有待写入的更改${NC}"
+    return
+  fi
+  if [ -f "$CODEX_CONFIG" ]; then
+    cp "$CODEX_CONFIG" "${CODEX_CONFIG}.bak"
+  fi
+  cp "$CODEX_STAGED" "$CODEX_CONFIG"
+  rm -f "$CODEX_STAGED"
+  CODEX_STAGED=""
+  echo -e "${GREEN}Codex 配置已写入 (${CODEX_CONFIG}.bak 已备份)${NC}"
+}
+
+discard_staging_codex() {
+  if has_codex_staging; then
+    rm -f "$CODEX_STAGED"
+    CODEX_STAGED=""
+    echo -e "${YELLOW}Codex 更改已丢弃${NC}"
+  fi
+}
 
 # Backend-aware wrappers
 get_current_provider() {
@@ -110,29 +151,42 @@ set_max_tokens() {
   fi
 }
 
+# ── Codex TOML operations (all use CODEX_STAGED) ────────
+
+_co_cfg() {
+  if [ -n "$CODEX_STAGED" ] && [ -f "$CODEX_STAGED" ]; then
+    echo "$CODEX_STAGED"
+  else
+    echo "$CODEX_CONFIG"
+  fi
+}
+
 co_get_current_provider() {
-  sed -n 's/^[[:space:]]*model_provider[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' "$CODEX_CONFIG" 2>/dev/null || echo "openai (默认)"
+  sed -n 's/^[[:space:]]*model_provider[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' "$(_co_cfg)" 2>/dev/null || echo "openai (默认)"
 }
 
 co_get_current_model() {
-  sed -n 's/^[[:space:]]*model[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' "$CODEX_CONFIG" 2>/dev/null || echo "(未设置)"
+  sed -n 's/^[[:space:]]*model[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' "$(_co_cfg)" 2>/dev/null || echo "(未设置)"
 }
 
 co_set_current_model() {
-  local model="$1"
+  local model="$1" cfg
+  cfg="$(_co_cfg)"
   local tmp
   tmp=$(mktemp)
-  if grep -q '^[[:space:]]*model[[:space:]]*=' "$CODEX_CONFIG"; then
-    sed "s|^\([[:space:]]*model[[:space:]]*=[[:space:]]*\)\"[^\"]*\"|\1\"${model}\"|" "$CODEX_CONFIG" > "$tmp"
+  if grep -q '^[[:space:]]*model[[:space:]]*=' "$cfg"; then
+    sed "s|^\([[:space:]]*model[[:space:]]*=[[:space:]]*\)\"[^\"]*\"|\1\"${model}\"|" "$cfg" > "$tmp"
   else
-    printf '%s\n' "model = \"${model}\"" | cat - "$CODEX_CONFIG" > "$tmp"
+    printf '%s\n' "model = \"${model}\"" | cat - "$cfg" > "$tmp"
   fi
-  mv "$tmp" "$CODEX_CONFIG"
+  mv "$tmp" "$cfg"
 }
 
 # Parse all [model_providers.X] sections from config.
 # Output per line: key|name|base_url|wire_api|token|model
 co_parse_providers() {
+  local cfg
+  cfg="$(_co_cfg)"
   local in_section=""
   local name="" base_url="" wire_api="" token="" model=""
 
@@ -155,7 +209,7 @@ co_parse_providers() {
       [[ "$line" =~ ^experimental_bearer_token\ *=\ *\"([^\"]+)\" ]] && token="${BASH_REMATCH[1]}"
       [[ "$line" =~ ^model\ *=\ *\"([^\"]+)\" ]] && model="${BASH_REMATCH[1]}"
     fi
-  done < "$CODEX_CONFIG"
+  done < "$cfg"
 
   if [[ -n "$in_section" && -n "$base_url" ]]; then
     echo "${in_section}|${name:-$in_section}|${base_url}|${wire_api:-responses}|${token:-}|${model:-}"
@@ -164,21 +218,23 @@ co_parse_providers() {
 
 # Set model_provider in config. Adds the line if missing.
 co_set_current_provider() {
-  local provider="$1"
+  local provider="$1" cfg
+  cfg="$(_co_cfg)"
   local tmp
   tmp=$(mktemp)
-  if grep -q '^[[:space:]]*model_provider[[:space:]]*=' "$CODEX_CONFIG"; then
-    sed "s|^\([[:space:]]*model_provider[[:space:]]*=[[:space:]]*\)\"[^\"]*\"|\1\"${provider}\"|" "$CODEX_CONFIG" > "$tmp"
+  if grep -q '^[[:space:]]*model_provider[[:space:]]*=' "$cfg"; then
+    sed "s|^\([[:space:]]*model_provider[[:space:]]*=[[:space:]]*\)\"[^\"]*\"|\1\"${provider}\"|" "$cfg" > "$tmp"
   else
-    printf '%s\n' "model_provider = \"${provider}\"" | cat - "$CODEX_CONFIG" > "$tmp"
+    printf '%s\n' "model_provider = \"${provider}\"" | cat - "$cfg" > "$tmp"
   fi
-  mv "$tmp" "$CODEX_CONFIG"
+  mv "$tmp" "$cfg"
 }
 
 # Append a new provider section to config.
 co_append_provider() {
-  local id="$1" name="$2" url="$3" key="$4"
-  cat >> "$CODEX_CONFIG" << EOF
+  local id="$1" name="$2" url="$3" key="$4" cfg
+  cfg="$(_co_cfg)"
+  cat >> "$cfg" << EOF
 
 [model_providers.${id}]
 name = "${name}"
@@ -191,7 +247,8 @@ EOF
 
 # Update fields of an existing provider section in config.
 co_update_provider_fields() {
-  local provider="$1" new_url="$2" new_token="$3"
+  local provider="$1" new_url="$2" new_token="$3" cfg
+  cfg="$(_co_cfg)"
   local in_section=0
   local tmp
   tmp=$(mktemp)
@@ -206,30 +263,32 @@ co_update_provider_fields() {
       echo "$line" | grep -q '^experimental_bearer_token' && line="experimental_bearer_token = \"${new_token}\""
     fi
     echo "$line"
-  done < "$CODEX_CONFIG" > "$tmp"
-  mv "$tmp" "$CODEX_CONFIG"
+  done < "$cfg" > "$tmp"
+  mv "$tmp" "$cfg"
 }
 
 co_get_max_tokens() {
-  sed -n 's/^[[:space:]]*max_tokens[[:space:]]*=[[:space:]]*\([0-9]*\)/\1/p' "$CODEX_CONFIG" 2>/dev/null
+  sed -n 's/^[[:space:]]*max_tokens[[:space:]]*=[[:space:]]*\([0-9]*\)/\1/p' "$(_co_cfg)" 2>/dev/null
 }
 
 co_set_max_tokens() {
-  local tokens="$1"
+  local tokens="$1" cfg
+  cfg="$(_co_cfg)"
   local tmp
   tmp=$(mktemp)
-  if grep -q '^[[:space:]]*max_tokens[[:space:]]*=' "$CODEX_CONFIG"; then
-    sed "s|^\([[:space:]]*max_tokens[[:space:]]*=[[:space:]]*\)[0-9]*|\1${tokens}|" "$CODEX_CONFIG" > "$tmp"
+  if grep -q '^[[:space:]]*max_tokens[[:space:]]*=' "$cfg"; then
+    sed "s|^\([[:space:]]*max_tokens[[:space:]]*=[[:space:]]*\)[0-9]*|\1${tokens}|" "$cfg" > "$tmp"
   else
-    cat "$CODEX_CONFIG" > "$tmp"
+    cat "$cfg" > "$tmp"
     printf '%s\n' "max_tokens = ${tokens}" >> "$tmp"
   fi
-  mv "$tmp" "$CODEX_CONFIG"
+  mv "$tmp" "$cfg"
 }
 
 # Remove a provider section from config.
 co_remove_provider() {
-  local provider="$1"
+  local provider="$1" cfg
+  cfg="$(_co_cfg)"
   local tmp
   tmp=$(mktemp)
   local skip=0
@@ -241,6 +300,6 @@ co_remove_provider() {
     [[ "$line" =~ ^\[ && "$skip" == 1 ]] && skip=0
     [[ "$skip" == 1 ]] && continue
     echo "$line"
-  done < "$CODEX_CONFIG" > "$tmp"
-  mv "$tmp" "$CODEX_CONFIG"
+  done < "$cfg" > "$tmp"
+  mv "$tmp" "$cfg"
 }

@@ -1,11 +1,60 @@
 #!/usr/bin/env bash
-# claude_config.sh - Claude Code settings.json reading/writing
+# claude_config.sh - Claude Code settings.json with staging
 # Source this file, don't run directly.
 
 CLAUDE_CONFIG="${CLAUDE_CONFIG:-$HOME/.claude/settings.json}"
 
+# ── staging ─────────────────────────────────────────────
+
+CLAUDE_STAGED=""
+
+init_staging_claude() {
+  [ ! -f "$CLAUDE_CONFIG" ] && return
+  CLAUDE_STAGED=$(mktemp)
+  cp "$CLAUDE_CONFIG" "$CLAUDE_STAGED"
+}
+
+has_claude_staging() {
+  [ -n "$CLAUDE_STAGED" ] && [ -f "$CLAUDE_STAGED" ]
+}
+
+apply_staging_claude() {
+  if ! has_claude_staging; then
+    echo -e "${YELLOW}Claude Code: 没有待写入的更改${NC}"
+    return
+  fi
+  if [ -f "$CLAUDE_CONFIG" ]; then
+    cp "$CLAUDE_CONFIG" "${CLAUDE_CONFIG}.bak"
+  fi
+  cp "$CLAUDE_STAGED" "$CLAUDE_CONFIG"
+  rm -f "$CLAUDE_STAGED"
+  CLAUDE_STAGED=""
+  echo -e "${GREEN}Claude Code 配置已写入 (${CLAUDE_CONFIG}.bak 已备份)${NC}"
+}
+
+discard_staging_claude() {
+  if has_claude_staging; then
+    rm -f "$CLAUDE_STAGED"
+    CLAUDE_STAGED=""
+    echo -e "${YELLOW}Claude Code 更改已丢弃${NC}"
+  fi
+}
+
+# Returns the active config file (staged or real)
+_cl_cfg() {
+  if [ -n "$CLAUDE_STAGED" ] && [ -f "$CLAUDE_STAGED" ]; then
+    echo "$CLAUDE_STAGED"
+  else
+    echo "$CLAUDE_CONFIG"
+  fi
+}
+
+# ── JSON helpers (all use staged file) ──────────────────
+
 _cl_json_get() {
   local key="$1"
+  local cfg
+  cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
 try:
@@ -14,11 +63,13 @@ try:
     print(val if isinstance(val, str) else json.dumps(val) if val else '')
 except Exception:
     print('')
-" "$CLAUDE_CONFIG" "$key" 2>/dev/null
+" "$cfg" "$key" 2>/dev/null
 }
 
 _cl_json_set() {
   local key="$1" val="$2"
+  local cfg
+  cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
 path = sys.argv[1]
@@ -36,7 +87,7 @@ except (json.JSONDecodeError, ValueError):
 with open(path, 'w') as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
     f.write('\n')
-" "$CLAUDE_CONFIG" "$key" "$val"
+" "$cfg" "$key" "$val"
 }
 
 # ── 3-model support (opus/sonnet/haiku) ──────────────────
@@ -44,6 +95,8 @@ with open(path, 'w') as f:
 CLAUDE_MODEL_TIERS="opus sonnet haiku"
 
 cl_get_models() {
+  local cfg
+  cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
 try:
@@ -57,10 +110,12 @@ for tier in ['opus', 'sonnet', 'haiku']:
     active = data.get('model', '') == tier
     mark = '*' if active else ''
     print(f'{tier}|{mid}|{mark}')
-" "$CLAUDE_CONFIG" 2>/dev/null
+" "$cfg" 2>/dev/null
 }
 
 cl_get_current_model() {
+  local cfg
+  cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
 try:
@@ -78,26 +133,22 @@ elif model:
     print(model)
 else:
     print('(未设置)')
-" "$CLAUDE_CONFIG" 2>/dev/null
+" "$cfg" 2>/dev/null
 }
 
 cl_set_current_model() {
   local tier="$1"
-  # If it's a known tier, set model to that tier
-  # Otherwise, set as raw model ID
   local is_tier=0
   for t in $CLAUDE_MODEL_TIERS; do
     [ "$tier" = "$t" ] && is_tier=1 && break
   done
-  if [ "$is_tier" -eq 1 ]; then
-    _cl_json_set "model" "$tier"
-  else
-    _cl_json_set "model" "$tier"
-  fi
+  _cl_json_set "model" "$tier"
 }
 
 cl_set_model_id() {
   local tier="$1" model_id="$2"
+  local cfg
+  cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
 path = sys.argv[1]
@@ -114,12 +165,14 @@ data['models'] = models
 with open(path, 'w') as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
     f.write('\n')
-" "$CLAUDE_CONFIG" "$tier" "$model_id"
+" "$cfg" "$tier" "$model_id"
 }
 
 # ── context size ─────────────────────────────────────────
 
 cl_get_max_tokens() {
+  local cfg
+  cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
 try:
@@ -129,7 +182,7 @@ try:
     print(val if val else '')
 except Exception:
     print('')
-" "$CLAUDE_CONFIG" 2>/dev/null
+" "$cfg" 2>/dev/null
 }
 
 cl_set_max_tokens() {
@@ -142,6 +195,8 @@ cl_set_max_tokens() {
 # ── providers ────────────────────────────────────────────
 
 cl_parse_providers() {
+  local cfg
+  cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
 try:
@@ -157,10 +212,12 @@ for key, cfg in sorted(providers.items()):
         token = cfg.get('api_key', '')
         model = cfg.get('model', '')
         print(f'{key}|{name}|{url}||{token}|{model}')
-" "$CLAUDE_CONFIG" 2>/dev/null
+" "$cfg" 2>/dev/null
 }
 
 cl_get_current_provider() {
+  local cfg
+  cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
 try:
@@ -177,7 +234,7 @@ elif providers:
     print(list(providers.keys())[0])
 else:
     print('(未配置)')
-" "$CLAUDE_CONFIG" 2>/dev/null
+" "$cfg" 2>/dev/null
 }
 
 cl_set_current_provider() {
@@ -187,6 +244,8 @@ cl_set_current_provider() {
 
 cl_append_provider() {
   local id="$1" name="$2" url="$3" key="$4"
+  local cfg
+  cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
 path = sys.argv[1]
@@ -209,11 +268,13 @@ data['providers'] = providers
 with open(path, 'w') as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
     f.write('\n')
-" "$CLAUDE_CONFIG" "$id" "$name" "$url" "$key"
+" "$cfg" "$id" "$name" "$url" "$key"
 }
 
 cl_update_provider_fields() {
   local provider="$1" new_url="$2" new_token="$3"
+  local cfg
+  cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
 path = sys.argv[1]
@@ -234,11 +295,13 @@ if pid in providers:
     with open(path, 'w') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.write('\n')
-" "$CLAUDE_CONFIG" "$provider" "$new_url" "$new_token"
+" "$cfg" "$provider" "$new_url" "$new_token"
 }
 
 cl_remove_provider() {
   local provider="$1"
+  local cfg
+  cfg="$(_cl_cfg)"
   python3 -c "
 import sys, json
 path = sys.argv[1]
@@ -255,5 +318,5 @@ if data.get('active_provider') == pid:
 with open(path, 'w') as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
     f.write('\n')
-" "$CLAUDE_CONFIG" "$provider"
+" "$cfg" "$provider"
 }

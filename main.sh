@@ -12,6 +12,19 @@ source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/ui.sh"
 source "$SCRIPT_DIR/lib/switch.sh"
 
+# Init staging (changes go here first, user writes to real config later)
+init_staging_codex
+init_staging_claude
+
+# ── staging indicator ───────────────────────────────────
+
+_staging_badge() {
+  local has_any=0
+  has_codex_staging 2>/dev/null && has_any=1
+  has_claude_staging 2>/dev/null && has_any=1
+  [ "$has_any" -eq 1 ] && echo -e "  ${YELLOW}⚠ 有未写入的更改${NC}"
+}
+
 # ── menus ───────────────────────────────────────────────
 
 show_codex_menu() {
@@ -23,6 +36,7 @@ show_codex_menu() {
   current=$(get_current_provider)
   echo -e "  当前 provider: ${BOLD}${GREEN}${current}${NC}"
   [[ "$HAS_FZF" -eq 0 ]] && echo -e "  ${DIM}(未安装 fzf，使用数字选择模式)${NC}"
+  _staging_badge
   echo ""
 
   local choice
@@ -36,6 +50,8 @@ show_codex_menu() {
     "🔓  解锁插件市场" \
     "📏  设置上下文大小" \
     "📋  查看当前配置" \
+    "💾  写入配置文件" \
+    "🗑️   放弃更改" \
     "↩️   返回" \
     "❌  退出")
 
@@ -44,11 +60,13 @@ show_codex_menu() {
     *模型*)          do_model; show_codex_menu ;;
     *添加*)          do_add; show_codex_menu ;;
     *编辑*)          do_edit; show_codex_menu ;;
-    *删除*)          do_delete; show_codex_menu ;;
+    *删除*Provider*) do_delete; show_codex_menu ;;
     *显示*会话*)     do_show_all; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
     *解锁*)          do_unlock; show_codex_menu ;;
     *上下文*|*📏*)    do_context; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
     *查看*配置*)     do_show_config; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
+    *写入*配置*)     do_apply; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
+    *放弃*更改*)     do_discard; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
     *返回*)          choose_backend ;;
     *)               exit 0 ;;
   esac
@@ -63,6 +81,7 @@ show_claude_menu() {
   current=$(get_current_provider)
   echo -e "  当前 provider: ${BOLD}${GREEN}${current}${NC}"
   [[ "$HAS_FZF" -eq 0 ]] && echo -e "  ${DIM}(未安装 fzf，使用数字选择模式)${NC}"
+  _staging_badge
   echo ""
 
   local choice
@@ -71,6 +90,8 @@ show_claude_menu() {
     "🤖  切换模型" \
     "📏  设置上下文大小" \
     "📋  查看当前配置" \
+    "💾  写入配置文件" \
+    "🗑️   放弃更改" \
     "↩️   返回" \
     "❌  退出")
 
@@ -79,6 +100,8 @@ show_claude_menu() {
     *模型*)          do_model_claude; show_claude_menu ;;
     *上下文*|*📏*)    do_context; echo ""; read -rp "按回车返回..."; show_claude_menu ;;
     *查看*配置*)     do_show_config; echo ""; read -rp "按回车返回..."; show_claude_menu ;;
+    *写入*配置*)     do_apply; echo ""; read -rp "按回车返回..."; show_claude_menu ;;
+    *放弃*更改*)     do_discard; echo ""; read -rp "按回车返回..."; show_claude_menu ;;
     *返回*)          choose_backend ;;
     *)               exit 0 ;;
   esac
@@ -156,9 +179,11 @@ if [ -n "${1:-}" ]; then
     list|ls)      do_list ;;
     config|c)     do_show_config ;;
     context|ctx)  do_context ;;
+    apply)        do_apply ;;
+    discard)      do_discard ;;
     unlock|u)     do_unlock ;;
     show-all|sa)  $UV_RUN python3 "$SCRIPT_DIR/lib/sync.py" "${2:-}" ;;
-    *)            echo "用法: $0 [--codex|--claude] [switch|model|add|edit|delete|list|config|context|unlock|show-all]" ;;
+    *)            echo "用法: $0 [--codex|--claude] [switch|model|add|edit|delete|list|config|context|apply|discard|unlock|show-all]" ;;
   esac
   exit 0
 fi
