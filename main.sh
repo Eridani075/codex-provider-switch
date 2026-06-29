@@ -37,17 +37,23 @@ show_startup_summary() {
   echo ""
 
   if [ "$has_codex" -eq 1 ]; then
-    local provider model ctx provider_count
+    local provider model ctx provider_count auth_key
     provider=$(co_get_current_provider)
     model=$(co_get_current_model)
     ctx=$(get_context_display)
     provider_count=$(co_parse_providers | wc -l)
+    auth_key=$(co_get_auth_key)
 
     echo -e "  ${BOLD}Codex${NC}  ${DIM}${CODEX_CONFIG}${NC}"
     echo -e "    provider:  ${GREEN}${provider}${NC}"
     echo -e "    model:     ${GREEN}${model}${NC}"
     [ -n "$ctx" ] && echo -e "    上下文:    ${GREEN}${ctx}${NC}"
     echo -e "    providers: ${GREEN}${provider_count}${NC} 个"
+    if [ -n "$auth_key" ]; then
+      echo -e "    auth.json: ${GREEN}${auth_key:0:10}****${NC}"
+    else
+      echo -e "    auth.json: ${YELLOW}未配置${NC}"
+    fi
     echo ""
   fi
 

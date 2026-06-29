@@ -3,6 +3,7 @@
 # Source this file, don't run directly.
 
 CODEX_CONFIG="${CODEX_CONFIG:-$HOME/.codex/config.toml}"
+CODEX_AUTH="${CODEX_AUTH:-$HOME/.codex/auth.json}"
 
 # Backend detection: "codex" or "claude"
 BACKEND="${BACKEND:-}"
@@ -30,11 +31,16 @@ _detect_backend
 # On discard: delete staged.
 
 CODEX_STAGED=""
+CODEX_AUTH_STAGED=""
 
 init_staging_codex() {
   [ ! -f "$CODEX_CONFIG" ] && return
   CODEX_STAGED=$(mktemp)
   cp "$CODEX_CONFIG" "$CODEX_STAGED"
+  if [ -f "$CODEX_AUTH" ]; then
+    CODEX_AUTH_STAGED=$(mktemp)
+    cp "$CODEX_AUTH" "$CODEX_AUTH_STAGED"
+  fi
 }
 
 has_codex_staging() {
@@ -52,6 +58,10 @@ apply_staging_codex() {
   cp "$CODEX_STAGED" "$CODEX_CONFIG"
   rm -f "$CODEX_STAGED"
   CODEX_STAGED=""
+
+  # Sync auth.json with current provider's token
+  co_sync_auth
+
   echo -e "${GREEN}Codex 配置已写入 (${CODEX_CONFIG}.bak 已备份)${NC}"
 }
 
@@ -60,6 +70,10 @@ discard_staging_codex() {
     rm -f "$CODEX_STAGED"
     CODEX_STAGED=""
     echo -e "${YELLOW}Codex 更改已丢弃${NC}"
+  fi
+  if [ -n "$CODEX_AUTH_STAGED" ] && [ -f "$CODEX_AUTH_STAGED" ]; then
+    rm -f "$CODEX_AUTH_STAGED"
+    CODEX_AUTH_STAGED=""
   fi
 }
 
@@ -305,4 +319,72 @@ co_remove_provider() {
     echo "$line"
   done < "$cfg" > "$tmp"
   mv "$tmp" "$cfg"
+}
+
+# ── auth.json operations ────────────────────────────────
+
+# Read OPENAI_API_KEY from auth.json
+co_get_auth_key() {
+  local auth="$CODEX_AUTH"
+  [ -n "$CODEX_AUTH_STAGED" ] && [ -f "$CODEX_AUTH_STAGED" ] && auth="$CODEX_AUTH_STAGED"
+  python3 -c "
+import sys, json
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    print(data.get('OPENAI_API_KEY', ''))
+except Exception:
+    print('')
+" "$auth" 2>/dev/null
+}
+
+# Write auth.json with given API key
+co_write_auth() {
+  local key="$1"
+  local auth="$CODEX_AUTH"
+  [ -n "$CODEX_AUTH_STAGED" ] && [ -f "$CODEX_AUTH_STAGED" ] && auth="$CODEX_AUTH_STAGED"
+  python3 -c "
+import sys, json
+path = sys.argv[1]
+key = sys.argv[2]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    data = {}
+data['auth_mode'] = 'apikey'
+data['OPENAI_API_KEY'] = key
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+    f.write('\n')
+" "$auth" "$key"
+}
+
+# Sync auth.json with the current provider's token from config
+co_sync_auth() {
+  local cfg="$CODEX_CONFIG"
+  local provider
+  provider=$(co_get_current_provider)
+  provider="${provider% (默认)}"
+
+  # Extract token for this provider from config
+  local token=""
+  local in_section=0
+  while IFS= read -r line; do
+    if [[ "$line" == "[model_providers.${provider}]" ]]; then
+      in_section=1
+    elif [[ "$line" =~ ^\[ && "$in_section" == 1 ]]; then
+      break
+    elif [ "$in_section" = 1 ]; then
+      [[ "$line" =~ ^experimental_bearer_token\ *=\ *\"([^\"]+)\" ]] && token="${BASH_REMATCH[1]}"
+    fi
+  done < "$cfg"
+
+  if [ -n "$token" ]; then
+    [ -f "$CODEX_AUTH" ] && cp "$CODEX_AUTH" "${CODEX_AUTH}.bak"
+    co_write_auth "$token"
+    echo -e "  ${GREEN}auth.json 已同步${NC}"
+  else
+    echo -e "  ${YELLOW}当前 provider 无 token，跳过 auth.json${NC}"
+  fi
 }
