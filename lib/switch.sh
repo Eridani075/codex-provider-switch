@@ -162,12 +162,39 @@ do_unlock() {
 }
 
 do_show_config() {
-  echo -e "${CYAN}当前 Codex 配置摘要${NC}"
+  local backend_label="Codex"
+  [ "$BACKEND" = "claude" ] && backend_label="Claude Code"
+
+  echo -e "${CYAN}${backend_label} 配置摘要${NC}"
   echo ""
 
   local current
   current=$(get_current_provider)
-  echo -e "  model_provider = ${BOLD}${GREEN}${current}${NC}"
+  echo -e "  provider = ${BOLD}${GREEN}${current}${NC}"
+
+  local model tokens
+  model=$(get_current_model)
+  echo -e "  model = ${BOLD}${GREEN}${model}${NC}"
+
+  tokens=$(get_max_tokens)
+  [ -n "$tokens" ] && echo -e "  max_tokens = ${BOLD}${GREEN}${tokens}${NC}"
+
+  # Claude Code: show all 3 model tiers
+  if [ "$BACKEND" = "claude" ]; then
+    echo ""
+    echo -e "${BOLD}模型配置:${NC}"
+    local models_raw
+    models_raw=$(get_models)
+    if [ -n "$models_raw" ]; then
+      while IFS='|' read -r tier mid active; do
+        local marker=" "
+        [ -n "$active" ] && marker="${GREEN}✓${NC}"
+        local display="${mid:-未设置}"
+        echo -e "  ${marker} ${BOLD}${tier}${NC}: ${display}"
+      done <<< "$models_raw"
+    fi
+  fi
+
   echo ""
 
   local providers
@@ -359,4 +386,101 @@ do_switch_backend() {
     *Claude*)   BACKEND="claude"; echo -e "${GREEN}已切换到: ${BOLD}Claude Code${NC}" ;;
     *)          return ;;
   esac
+}
+
+# ── Claude Code 3-model editor ──────────────────────────
+
+do_model_claude() {
+  local current_tier
+  current_tier=$(_cl_json_get "model")
+  [ -z "$current_tier" ] && current_tier="(未设置)"
+
+  echo -e "${CYAN}Claude Code 模型配置${NC}"
+  echo -e "  当前激活: ${BOLD}${GREEN}${current_tier}${NC}"
+  echo ""
+
+  local models_raw
+  models_raw=$(get_models)
+
+  if [ -z "$models_raw" ]; then
+    echo -e "${RED}无法读取模型配置。${NC}"
+    return
+  fi
+
+  # Build options from 3 tiers
+  local options=()
+  while IFS='|' read -r tier mid active; do
+    local label="${tier}"
+    [ -n "$mid" ] && label="${tier} — ${mid}"
+    [ -n "$active" ] && label="${label} ${GREEN}✓ 当前${NC}"
+    options+=("${label}")
+  done <<< "$models_raw"
+  options+=("✏️  编辑模型 ID")
+  options+=("↩️  保持不变")
+
+  local choice
+  choice=$(choose "选择模型 > " "${options[@]}")
+
+  case "$choice" in
+    *保持*|*↩️*|"")  return ;;
+    *编辑*|*✏️*)
+      echo ""
+      echo -e "${CYAN}编辑模型 ID${NC}"
+      local edit_options=()
+      while IFS='|' read -r tier mid active; do
+        local label="${tier}"
+        [ -n "$mid" ] && label="${tier} [${mid}]"
+        edit_options+=("${label}")
+      done <<< "$models_raw"
+      edit_options+=("↩️  返回")
+
+      local edit_choice
+      edit_choice=$(choose "编辑哪个 > " "${edit_options[@]}")
+
+      case "$edit_choice" in
+        *返回*|*↩️*|"")  return ;;
+        *)
+          local edit_tier
+          edit_tier=$(echo "$edit_choice" | awk '{print $1}')
+          echo ""
+          read -rp "输入 ${edit_tier} 的模型 ID: " new_id
+          if [ -n "$new_id" ]; then
+            set_model_id "$edit_tier" "$new_id"
+            echo -e "${GREEN}${edit_tier} 已更新为: ${BOLD}${new_id}${NC}"
+          fi
+          ;;
+      esac
+      ;;
+    *)
+      # Select tier as active
+      local new_tier
+      new_tier=$(echo "$choice" | awk '{print $1}')
+      set_current_model "$new_tier"
+      echo -e "${GREEN}已切换到: ${BOLD}${new_tier}${NC}"
+      ;;
+  esac
+}
+
+# ── Context size (max_tokens) ───────────────────────────
+
+do_context() {
+  local current
+  current=$(get_max_tokens)
+
+  echo -e "${CYAN}设置上下文大小 (max_tokens)${NC}"
+  [ -n "$current" ] && echo -e "  当前值: ${BOLD}${GREEN}${current}${NC}"
+  echo ""
+  echo -e "  ${DIM}常用值: 4096 / 8192 / 16384 / 32768 / 65536${NC}"
+  echo ""
+
+  read -rp "输入 max_tokens (留空保持不变): " tokens
+
+  if [ -n "$tokens" ]; then
+    if ! echo "$tokens" | grep -q '^[0-9]\+$'; then
+      echo -e "${RED}请输入数字${NC}"
+      return
+    fi
+    set_max_tokens "$tokens"
+    echo -e "${GREEN}max_tokens 已设置为: ${BOLD}${tokens}${NC}"
+  fi
 }

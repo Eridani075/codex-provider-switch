@@ -80,6 +80,36 @@ remove_provider() {
   fi
 }
 
+# Model tier support (Claude Code has opus/sonnet/haiku)
+get_models() {
+  if [ "$BACKEND" = "claude" ]; then
+    cl_get_models
+  else
+    echo ""
+  fi
+}
+set_model_id() {
+  if [ "$BACKEND" = "claude" ]; then
+    cl_set_model_id "$1" "$2"
+  fi
+}
+
+# Context size (max_tokens)
+get_max_tokens() {
+  if [ "$BACKEND" = "claude" ]; then
+    cl_get_max_tokens
+  else
+    co_get_max_tokens
+  fi
+}
+set_max_tokens() {
+  if [ "$BACKEND" = "claude" ]; then
+    cl_set_max_tokens "$1"
+  else
+    co_set_max_tokens "$1"
+  fi
+}
+
 co_get_current_provider() {
   sed -n 's/^[[:space:]]*model_provider[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' "$CODEX_CONFIG" 2>/dev/null || echo "openai (默认)"
 }
@@ -177,6 +207,23 @@ co_update_provider_fields() {
     fi
     echo "$line"
   done < "$CODEX_CONFIG" > "$tmp"
+  mv "$tmp" "$CODEX_CONFIG"
+}
+
+co_get_max_tokens() {
+  sed -n 's/^[[:space:]]*max_tokens[[:space:]]*=[[:space:]]*\([0-9]*\)/\1/p' "$CODEX_CONFIG" 2>/dev/null
+}
+
+co_set_max_tokens() {
+  local tokens="$1"
+  local tmp
+  tmp=$(mktemp)
+  if grep -q '^[[:space:]]*max_tokens[[:space:]]*=' "$CODEX_CONFIG"; then
+    sed "s|^\([[:space:]]*max_tokens[[:space:]]*=[[:space:]]*\)[0-9]*|\1${tokens}|" "$CODEX_CONFIG" > "$tmp"
+  else
+    cat "$CODEX_CONFIG" > "$tmp"
+    printf '%s\n' "max_tokens = ${tokens}" >> "$tmp"
+  fi
   mv "$tmp" "$CODEX_CONFIG"
 }
 

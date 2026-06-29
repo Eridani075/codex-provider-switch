@@ -34,6 +34,7 @@ show_codex_menu() {
     "🗑️   删除 Provider" \
     "📋  显示所有会话" \
     "🔓  解锁插件市场" \
+    "📏  设置上下文大小" \
     "📋  查看当前配置" \
     "↩️   返回" \
     "❌  退出")
@@ -46,6 +47,7 @@ show_codex_menu() {
     *删除*)          do_delete; show_codex_menu ;;
     *显示*会话*)     do_show_all; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
     *解锁*)          do_unlock; show_codex_menu ;;
+    *上下文*|*📏*)    do_context; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
     *查看*配置*)     do_show_config; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
     *返回*)          choose_backend ;;
     *)               exit 0 ;;
@@ -67,13 +69,15 @@ show_claude_menu() {
   choice=$(choose "操作 > " \
     "🔄  切换 Provider" \
     "🤖  切换模型" \
+    "📏  设置上下文大小" \
     "📋  查看当前配置" \
     "↩️   返回" \
     "❌  退出")
 
   case "$choice" in
     *切换*Provider*)  do_switch; show_claude_menu ;;
-    *模型*)          do_model; show_claude_menu ;;
+    *模型*)          do_model_claude; show_claude_menu ;;
+    *上下文*|*📏*)    do_context; echo ""; read -rp "按回车返回..."; show_claude_menu ;;
     *查看*配置*)     do_show_config; echo ""; read -rp "按回车返回..."; show_claude_menu ;;
     *返回*)          choose_backend ;;
     *)               exit 0 ;;
@@ -145,15 +149,16 @@ if [ -n "${1:-}" ]; then
 
   case "$1" in
     switch|s)     do_switch ;;
-    model|m)      do_model ;;
+    model|m)      [ "$BACKEND" = "claude" ] && do_model_claude || do_model ;;
     add|a)        do_add ;;
     edit|e)       do_edit ;;
     delete|d)     do_delete ;;
     list|ls)      do_list ;;
     config|c)     do_show_config ;;
+    context|ctx)  do_context ;;
     unlock|u)     do_unlock ;;
     show-all|sa)  $UV_RUN python3 "$SCRIPT_DIR/lib/sync.py" "${2:-}" ;;
-    *)            echo "用法: $0 [--codex|--claude] [switch|model|add|edit|delete|list|config|unlock|show-all]" ;;
+    *)            echo "用法: $0 [--codex|--claude] [switch|model|add|edit|delete|list|config|context|unlock|show-all]" ;;
   esac
   exit 0
 fi

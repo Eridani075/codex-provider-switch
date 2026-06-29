@@ -29,7 +29,6 @@ try:
         data = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
     data = {}
-# Try to parse as JSON (for dicts/lists), otherwise treat as string
 try:
     data[key] = json.loads(val)
 except (json.JSONDecodeError, ValueError):
@@ -40,19 +39,108 @@ with open(path, 'w') as f:
 " "$CLAUDE_CONFIG" "$key" "$val"
 }
 
+# ── 3-model support (opus/sonnet/haiku) ──────────────────
+
+CLAUDE_MODEL_TIERS="opus sonnet haiku"
+
+cl_get_models() {
+  python3 -c "
+import sys, json
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)
+models = data.get('models', {})
+for tier in ['opus', 'sonnet', 'haiku']:
+    mid = models.get(tier, '')
+    active = data.get('model', '') == tier
+    mark = '*' if active else ''
+    print(f'{tier}|{mid}|{mark}')
+" "$CLAUDE_CONFIG" 2>/dev/null
+}
+
 cl_get_current_model() {
-  local model
-  model=$(_cl_json_get "model")
-  [ -n "$model" ] && echo "$model" || echo "(未设置)"
+  python3 -c "
+import sys, json
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+except Exception:
+    print('(未设置)')
+    sys.exit(0)
+model = data.get('model', '')
+models = data.get('models', {})
+if model in models:
+    mid = models[model]
+    print(f'{model} ({mid})' if mid else model)
+elif model:
+    print(model)
+else:
+    print('(未设置)')
+" "$CLAUDE_CONFIG" 2>/dev/null
 }
 
 cl_set_current_model() {
-  local model="$1"
-  _cl_json_set "model" "$model"
+  local tier="$1"
+  # If it's a known tier, set model to that tier
+  # Otherwise, set as raw model ID
+  local is_tier=0
+  for t in $CLAUDE_MODEL_TIERS; do
+    [ "$tier" = "$t" ] && is_tier=1 && break
+  done
+  if [ "$is_tier" -eq 1 ]; then
+    _cl_json_set "model" "$tier"
+  else
+    _cl_json_set "model" "$tier"
+  fi
 }
 
-# Parse providers from settings.json providers field.
-# Output per line: key|name|base_url||token|
+cl_set_model_id() {
+  local tier="$1" model_id="$2"
+  python3 -c "
+import sys, json
+path = sys.argv[1]
+tier = sys.argv[2]
+mid = sys.argv[3]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    data = {}
+models = data.get('models', {})
+models[tier] = mid
+data['models'] = models
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+    f.write('\n')
+" "$CLAUDE_CONFIG" "$tier" "$model_id"
+}
+
+# ── context size ─────────────────────────────────────────
+
+cl_get_max_tokens() {
+  python3 -c "
+import sys, json
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    val = data.get('max_tokens', '')
+    print(val if val else '')
+except Exception:
+    print('')
+" "$CLAUDE_CONFIG" 2>/dev/null
+}
+
+cl_set_max_tokens() {
+  local tokens="$1"
+  if [ -n "$tokens" ]; then
+    _cl_json_set "max_tokens" "$tokens"
+  fi
+}
+
+# ── providers ────────────────────────────────────────────
+
 cl_parse_providers() {
   python3 -c "
 import sys, json

@@ -6,6 +6,8 @@ Codex / Claude Code provider 切换工具。
 
 - 切换/添加/编辑/删除模型提供商
 - 切换模型（从 provider API 动态获取）
+- Claude Code 三模型配置（opus / sonnet / haiku）
+- 设置上下文大小（max_tokens）
 - 解锁插件市场（仅 Codex）
 - 统一会话显示（跨 provider 会话合并，仅 Codex）
 - 自动检测并切换 Codex / Claude Code 后端
@@ -42,11 +44,17 @@ chmod +x main.sh
 
 ## Claude Code 配置
 
-在 `~/.claude/settings.json` 的 `providers` 字段中添加 provider：
+在 `~/.claude/settings.json` 中配置：
 
 ```json
 {
-  "model": "claude-sonnet-4-20250514",
+  "model": "sonnet",
+  "models": {
+    "opus": "claude-opus-4-20250514",
+    "sonnet": "claude-sonnet-4-20250514",
+    "haiku": "claude-haiku-4-20251001"
+  },
+  "max_tokens": 16384,
   "active_provider": "my-api",
   "providers": {
     "my-api": {
