@@ -35,10 +35,10 @@ _show_codex_info() {
 
 _show_claude_info() {
   [ ! -f "$CLAUDE_CONFIG" ] && return
-  local url tier tokens
+  local url tier ctx
   url=$(cl_get_provider_url)
   tier=$(_cl_read "model")
-  tokens=$(cl_get_max_tokens)
+  ctx=$(cl_get_context_1m)
 
   echo -e "  ${BOLD}Claude Code${NC}  ${DIM}${CLAUDE_CONFIG}${NC}"
   echo -e "    URL:   ${GREEN}${url:-未设置}${NC}"

@@ -207,11 +207,10 @@ do_show_config() {
   echo ""
 
   if [ "$BACKEND" = "claude" ]; then
-    local url token model tokens models_raw
+    local url token model models_raw ctx
     url=$(cl_get_provider_url)
     token=$(cl_get_provider_token)
     model=$(get_current_model)
-    tokens=$(get_max_tokens)
 
     echo -e "${BOLD}Provider:${NC}"
     echo -e "  URL:   ${GREEN}${url:-未设置}${NC}"
@@ -230,7 +229,6 @@ do_show_config() {
         echo -e "  ${marker} ${BOLD}${tier}${NC}: ${GREEN}${mid:-未设置}${NC}"
       done <<< "$models_raw"
     fi
-    local ctx
     ctx=$(cl_get_context_1m)
     echo -e "\n  上下文: ${GREEN}${ctx}${NC}"
   else
