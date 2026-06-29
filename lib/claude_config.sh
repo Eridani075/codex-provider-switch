@@ -228,37 +228,50 @@ cl_set_model_id() {
 }
 
 # ── Context size ─────────────────────────────────────────
-# Claude Code: binary toggle via CLAUDE_CODE_MAX_CONTEXT_TOKENS env var
-# 1M = 1048576 tokens, or unset for standard
+# Claude Code: 1M declared by [1M] suffix on model ID
+# e.g. "ocg/mimo-v2.5-pro[1M]" vs "ocg/mimo-v2.5-pro"
 
 cl_get_context_1m() {
-  local val
-  val=$(_cl_read "env.CLAUDE_CODE_MAX_CONTEXT_TOKENS")
-  if [ "$val" = "1048576" ]; then
-    echo "1M"
-  else
-    echo "标准"
-  fi
+  local cfg
+  cfg="$(_cl_cfg)"
+  python3 -c "
+import sys, json
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+env = data.get('env', {})
+# Check all 3 tier model IDs for [1M] suffix
+has_1m = False
+for tier in ['OPUS', 'SONNET', 'HAIKU']:
+    mid = env.get(f'ANTHROPIC_DEFAULT_{tier}_MODEL', '')
+    if '[1M]' in mid:
+        has_1m = True
+        break
+print('1M' if has_1m else '标准')
+" "$cfg" 2>/dev/null
 }
 
 cl_set_context_1m() {
-  local enabled="$1"  # "1" to enable 1M, "0" to disable
-  if [ "$enabled" = "1" ]; then
-    _cl_write_env "CLAUDE_CODE_MAX_CONTEXT_TOKENS" "1048576"
-  else
-    # Remove the key
-    local cfg
-    cfg="$(_cl_cfg)"
-    python3 -c "
+  local enable="$1"  # "1" to add [1M], "0" to remove
+  local cfg
+  cfg="$(_cl_cfg)"
+  python3 -c "
 import sys, json
 path = sys.argv[1]
+enable = sys.argv[2] == '1'
 with open(path) as f:
     data = json.load(f)
 env = data.get('env', {})
-env.pop('CLAUDE_CODE_MAX_CONTEXT_TOKENS', None)
+for tier in ['OPUS', 'SONNET', 'HAIKU']:
+    key = f'ANTHROPIC_DEFAULT_{tier}_MODEL'
+    mid = env.get(key, '')
+    if not mid:
+        continue
+    if enable and '[1M]' not in mid:
+        env[key] = mid + '[1M]'
+    elif not enable and '[1M]' in mid:
+        env[key] = mid.replace('[1M]', '')
 with open(path, 'w') as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
     f.write('\n')
-" "$cfg"
-  fi
+" "$cfg" "$enable"
 }
