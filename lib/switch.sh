@@ -437,7 +437,7 @@ do_switch_backend() {
 
 do_model_claude() {
   local current_tier
-  current_tier=$(_cl_json_get "model")
+  current_tier=$(_cl_read "model")
   [ -z "$current_tier" ] && current_tier="(未设置)"
 
   echo -e "${CYAN}Claude Code 模型配置${NC}"
