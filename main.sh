@@ -160,6 +160,7 @@ show_claude_menu() {
     "🔄  切换 Provider" \
     "🤖  切换模型" \
     "📏  设置上下文大小" \
+    "🔐  跳过首次登录" \
     "🔍  查看当前配置" \
     "💾  写入配置文件" \
     "⏪  放弃更改" \
@@ -170,6 +171,7 @@ show_claude_menu() {
     *切换*Provider*)  do_switch; show_claude_menu ;;
     *模型*)          do_model_claude; show_claude_menu ;;
     *上下文*|*📏*)    do_context; echo ""; read -rp "按回车返回..."; show_claude_menu ;;
+    *跳过*登录*|*🔐*)  do_bypass_login; echo ""; read -rp "按回车返回..."; show_claude_menu ;;
     *查看*配置*)     do_show_config; echo ""; read -rp "按回车返回..."; show_claude_menu ;;
     *写入*配置*)     do_apply; echo ""; read -rp "按回车返回..."; show_claude_menu ;;
     *放弃*更改*)     do_discard; echo ""; read -rp "按回车返回..."; show_claude_menu ;;
@@ -256,6 +258,7 @@ if [ -n "${1:-}" ]; then
     list|ls)      do_list ;;
     config|c)     do_show_config ;;
     context|ctx)  do_context ;;
+    bypass|bp)    do_bypass_login ;;
     apply)        do_apply ;;
     discard)      do_discard ;;
     unlock|u)     do_unlock ;;

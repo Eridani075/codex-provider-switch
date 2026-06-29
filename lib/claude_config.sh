@@ -275,3 +275,32 @@ with open(path, 'w') as f:
     f.write('\n')
 " "$cfg" "$enable"
 }
+
+# ── Bypass first-launch login ────────────────────────────
+# Sets hasCompletedOnboarding=true so Claude Code skips the login screen.
+# Reference: cc-switch (github.com/farion1231/cc-switch)
+
+cl_bypass_login() {
+  local cfg
+  cfg="$(_cl_cfg)"
+  python3 -c "
+import sys, json
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    data = {}
+data['hasCompletedOnboarding'] = True
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+    f.write('\n')
+print('done')
+" "$cfg" 2>/dev/null
+}
+
+cl_is_onboarding_done() {
+  local val
+  val=$(_cl_read "hasCompletedOnboarding")
+  [ "$val" = "True" ] || [ "$val" = "true" ]
+}

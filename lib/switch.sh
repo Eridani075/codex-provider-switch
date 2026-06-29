@@ -683,3 +683,29 @@ do_discard() {
     discard_staging_codex
   fi
 }
+
+# ── Bypass Claude Code first-launch login ───────────────
+
+do_bypass_login() {
+  echo -e "${BOLD}${CYAN}跳过 Claude Code 首次登录${NC}"
+  echo ""
+
+  if cl_is_onboarding_done; then
+    echo -e "  当前状态: ${GREEN}已完成 onboarding${NC}"
+    echo ""
+    read -rp "是否重置为未完成状态？(y/N): " yn
+    if [[ "$yn" =~ ^[Yy] ]]; then
+      _cl_write_top "hasCompletedOnboarding" "false"
+      echo -e "${YELLOW}已重置，下次启动 Claude Code 将显示登录界面${NC}"
+    fi
+  else
+    echo -e "  当前状态: ${YELLOW}未完成 onboarding${NC}"
+    echo ""
+    read -rp "是否跳过登录？(y/N): " yn
+    if [[ "$yn" =~ ^[Yy] ]]; then
+      cl_bypass_login
+      echo -e "${GREEN}已设置 hasCompletedOnboarding=true${NC}"
+      echo -e "${DIM}重启 Claude Code 即可跳过登录界面${NC}"
+    fi
+  fi
+}
