@@ -81,10 +81,11 @@ show_startup_summary
 # ── staging indicator ───────────────────────────────────
 
 _staging_badge() {
-  local has_any=0
-  has_codex_staging 2>/dev/null && has_any=1
-  has_claude_staging 2>/dev/null && has_any=1
-  [ "$has_any" -eq 1 ] && echo -e "  ${YELLOW}⚠ 有未写入的更改${NC}"
+  if [ "$BACKEND" = "claude" ]; then
+    has_claude_staging 2>/dev/null && echo -e "  ${YELLOW}⚠ 有未写入的更改${NC}"
+  else
+    has_codex_staging 2>/dev/null && echo -e "  ${YELLOW}⚠ 有未写入的更改${NC}"
+  fi
 }
 
 # ── menus ───────────────────────────────────────────────

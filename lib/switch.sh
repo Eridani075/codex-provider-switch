@@ -585,34 +585,26 @@ do_apply() {
   echo -e "${CYAN}写入配置${NC}"
   echo ""
 
-  local has_any=0
-  if has_codex_staging; then has_any=1; fi
-  if has_claude_staging; then has_any=1; fi
-
-  if [ "$has_any" -eq 0 ]; then
-    echo -e "${YELLOW}没有待写入的更改${NC}"
-    return
-  fi
-
-  if has_codex_staging; then
-    echo -e "  ${BOLD}Codex${NC}: ${CODEX_CONFIG}"
-  fi
-  if has_claude_staging; then
+  if [ "$BACKEND" = "claude" ]; then
+    if ! has_claude_staging; then
+      echo -e "${YELLOW}没有待写入的更改${NC}"
+      return
+    fi
     echo -e "  ${BOLD}Claude Code${NC}: ${CLAUDE_CONFIG}"
-  fi
-  echo ""
-
-  read -rp "确认写入配置文件？原文件将备份为 .bak (y/N): " yn
-  if [[ ! "$yn" =~ ^[Yy] ]]; then
-    echo -e "${YELLOW}已取消${NC}"
-    return
-  fi
-
-  if has_codex_staging; then
-    apply_staging_codex
-  fi
-  if has_claude_staging; then
+    echo ""
+    read -rp "确认写入配置文件？原文件将备份为 .bak (y/N): " yn
+    [[ ! "$yn" =~ ^[Yy] ]] && echo -e "${YELLOW}已取消${NC}" && return
     apply_staging_claude
+  else
+    if ! has_codex_staging; then
+      echo -e "${YELLOW}没有待写入的更改${NC}"
+      return
+    fi
+    echo -e "  ${BOLD}Codex${NC}: ${CODEX_CONFIG}"
+    echo ""
+    read -rp "确认写入配置文件？原文件将备份为 .bak (y/N): " yn
+    [[ ! "$yn" =~ ^[Yy] ]] && echo -e "${YELLOW}已取消${NC}" && return
+    apply_staging_codex
   fi
 }
 
@@ -620,21 +612,21 @@ do_discard() {
   echo -e "${CYAN}放弃更改${NC}"
   echo ""
 
-  local has_any=0
-  if has_codex_staging; then has_any=1; fi
-  if has_claude_staging; then has_any=1; fi
-
-  if [ "$has_any" -eq 0 ]; then
-    echo -e "${YELLOW}没有待放弃的更改${NC}"
-    return
+  if [ "$BACKEND" = "claude" ]; then
+    if ! has_claude_staging; then
+      echo -e "${YELLOW}没有待放弃的更改${NC}"
+      return
+    fi
+    read -rp "确认放弃 Claude Code 未写入的更改？ (y/N): " yn
+    [[ ! "$yn" =~ ^[Yy] ]] && echo -e "${YELLOW}已取消${NC}" && return
+    discard_staging_claude
+  else
+    if ! has_codex_staging; then
+      echo -e "${YELLOW}没有待放弃的更改${NC}"
+      return
+    fi
+    read -rp "确认放弃 Codex 未写入的更改？ (y/N): " yn
+    [[ ! "$yn" =~ ^[Yy] ]] && echo -e "${YELLOW}已取消${NC}" && return
+    discard_staging_codex
   fi
-
-  read -rp "确认放弃所有未写入的更改？ (y/N): " yn
-  if [[ ! "$yn" =~ ^[Yy] ]]; then
-    echo -e "${YELLOW}已取消${NC}"
-    return
-  fi
-
-  discard_staging_codex
-  discard_staging_claude
 }
