@@ -258,12 +258,19 @@ do_model() {
   echo ""
 
   local models_raw
-  models_raw=$(fetch_models "$base_url" "$token")
-
-  if [ -z "$models_raw" ]; then
+  while true; do
+    models_raw=$(fetch_models "$base_url" "$token")
+    if [ -n "$models_raw" ]; then
+      break
+    fi
     echo -e "${RED}无法获取模型列表，请检查 provider 配置和网络。${NC}"
-    return
-  fi
+    local retry
+    retry=$(choose "操作 > " "🔄  重试" "↩️  返回上一级")
+    case "$retry" in
+      *重试*) continue ;;
+      *) return ;;
+    esac
+  done
 
   # Build options from fetched models
   local options=()
