@@ -230,16 +230,18 @@ do_show_config() {
         echo -e "  ${marker} ${BOLD}${tier}${NC}: ${GREEN}${mid:-未设置}${NC}"
       done <<< "$models_raw"
     fi
-    [ -n "$tokens" ] && echo -e "\n  max_tokens: ${GREEN}${tokens}${NC}"
+    local ctx
+    ctx=$(cl_get_context_1m)
+    echo -e "\n  上下文: ${GREEN}${ctx}${NC}"
   else
-    local current model tokens
+    local current model ctx
     current=$(get_current_provider)
     model=$(get_current_model)
-    tokens=$(get_max_tokens)
+    ctx=$(get_context_display)
 
     echo -e "  provider = ${BOLD}${GREEN}${current}${NC}"
     echo -e "  model    = ${BOLD}${GREEN}${model}${NC}"
-    [ -n "$tokens" ] && echo -e "  max_tok  = ${BOLD}${GREEN}${tokens}${NC}"
+    [ -n "$ctx" ] && echo -e "  上下文   = ${BOLD}${GREEN}${ctx}${NC}"
 
     echo ""
     local providers
@@ -506,28 +508,77 @@ do_model_claude() {
   esac
 }
 
-# ── Context size (max_tokens) ───────────────────────────
+# ── Context size ─────────────────────────────────────────
 
 do_context() {
-  local current
-  current=$(get_max_tokens)
-
-  echo -e "${CYAN}设置上下文大小 (max_tokens)${NC}"
-  [ -n "$current" ] && echo -e "  当前值: ${BOLD}${GREEN}${current}${NC}"
-  echo ""
-  echo -e "  ${DIM}常用值: 4096 / 8192 / 16384 / 32768 / 65536${NC}"
-  echo ""
-
-  read -rp "输入 max_tokens (留空保持不变): " tokens
-
-  if [ -n "$tokens" ]; then
-    if ! echo "$tokens" | grep -q '^[0-9]\+$'; then
-      echo -e "${RED}请输入数字${NC}"
-      return
-    fi
-    set_max_tokens "$tokens"
-    echo -e "${GREEN}max_tokens 已设置为: ${BOLD}${tokens}${NC}"
+  if [ "$BACKEND" = "claude" ]; then
+    _do_context_claude
+  else
+    _do_context_codex
   fi
+}
+
+_do_context_claude() {
+  local current
+  current=$(cl_get_context_1m)
+
+  echo -e "${CYAN}Claude Code 上下文大小${NC}"
+  echo -e "  当前: ${BOLD}${GREEN}${current}${NC}"
+  echo ""
+
+  local choice
+  choice=$(choose "上下文 > " \
+    "1M (1048576 tokens)" \
+    "标准 (默认)" \
+    "↩️  保持不变")
+
+  case "$choice" in
+    *1M*)    cl_set_context_1m 1; echo -e "${GREEN}已设置为: ${BOLD}1M${NC}" ;;
+    *标准*)  cl_set_context_1m 0; echo -e "${GREEN}已设置为: ${BOLD}标准${NC}" ;;
+    *)       return ;;
+  esac
+}
+
+_do_context_codex() {
+  local current
+  current=$(co_get_max_tokens)
+
+  echo -e "${CYAN}Codex 上下文大小 (max_tokens)${NC}"
+  if [ -n "$current" ]; then
+    local display
+    display=$(get_context_display)
+    echo -e "  当前值: ${BOLD}${GREEN}${display}${NC}"
+  fi
+  echo ""
+  echo -e "  ${DIM}输入格式: 数字 + 单位${NC}"
+  echo -e "  ${DIM}  16m → 16384   32m → 32768   64m → 65536${NC}"
+  echo -e "  ${DIM}  512k → 512     1m → 1024${NC}"
+  echo ""
+
+  read -rp "输入上下文大小 (留空保持不变): " input
+
+  if [ -z "$input" ]; then
+    return
+  fi
+
+  # Parse M/K units
+  local tokens
+  input=$(echo "$input" | tr '[:upper:]' '[:lower:]')
+  if echo "$input" | grep -q '^[0-9]\+m$'; then
+    local num=${input%m}
+    tokens=$((num * 1024))
+  elif echo "$input" | grep -q '^[0-9]\+k$'; then
+    local num=${input%k}
+    tokens=$num
+  elif echo "$input" | grep -q '^[0-9]\+$'; then
+    tokens=$input
+  else
+    echo -e "${RED}格式错误，示例: 16m / 512k / 16384${NC}"
+    return
+  fi
+
+  co_set_max_tokens "$tokens"
+  echo -e "${GREEN}max_tokens 已设置为: ${BOLD}${tokens}${NC} (${input})"
 }
 
 # ── Apply / Discard staging ─────────────────────────────

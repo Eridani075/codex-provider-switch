@@ -20,16 +20,16 @@ init_staging_claude
 
 _show_codex_info() {
   [ ! -f "$CODEX_CONFIG" ] && return
-  local provider model tokens provider_count
+  local provider model ctx provider_count
   provider=$(co_get_current_provider)
   model=$(co_get_current_model)
-  tokens=$(co_get_max_tokens)
+  ctx=$(get_context_display)
   provider_count=$(co_parse_providers | wc -l)
 
   echo -e "  ${BOLD}Codex${NC}  ${DIM}${CODEX_CONFIG}${NC}"
   echo -e "    provider: ${GREEN}${provider}${NC}"
   echo -e "    model:    ${GREEN}${model}${NC}"
-  [ -n "$tokens" ] && echo -e "    max_tok:  ${GREEN}${tokens}${NC}"
+  [ -n "$ctx" ] && echo -e "    上下文:   ${GREEN}${ctx}${NC}"
   echo -e "    providers: ${GREEN}${provider_count}${NC} 个"
 }
 
@@ -54,7 +54,9 @@ _show_claude_info() {
     done <<< "$models_raw"
   fi
 
-  [ -n "$tokens" ] && echo -e "    max_tok: ${GREEN}${tokens}${NC}"
+  local ctx
+  ctx=$(cl_get_context_1m)
+  echo -e "    上下文: ${GREEN}${ctx}${NC}"
 }
 
 show_startup_summary() {

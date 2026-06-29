@@ -228,14 +228,37 @@ cl_set_model_id() {
 }
 
 # ── Context size ─────────────────────────────────────────
-# Claude Code doesn't have a standard max_tokens field in settings.json
-# Store it as a custom field for reference
+# Claude Code: binary toggle via CLAUDE_CODE_MAX_CONTEXT_TOKENS env var
+# 1M = 1048576 tokens, or unset for standard
 
-cl_get_max_tokens() {
-  _cl_read "max_tokens"
+cl_get_context_1m() {
+  local val
+  val=$(_cl_read "env.CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+  if [ "$val" = "1048576" ]; then
+    echo "1M"
+  else
+    echo "标准"
+  fi
 }
 
-cl_set_max_tokens() {
-  local tokens="$1"
-  [ -n "$tokens" ] && _cl_write_top "max_tokens" "$tokens"
+cl_set_context_1m() {
+  local enabled="$1"  # "1" to enable 1M, "0" to disable
+  if [ "$enabled" = "1" ]; then
+    _cl_write_env "CLAUDE_CODE_MAX_CONTEXT_TOKENS" "1048576"
+  else
+    # Remove the key
+    local cfg
+    cfg="$(_cl_cfg)"
+    python3 -c "
+import sys, json
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+env = data.get('env', {})
+env.pop('CLAUDE_CODE_MAX_CONTEXT_TOKENS', None)
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+    f.write('\n')
+" "$cfg"
+  fi
 }

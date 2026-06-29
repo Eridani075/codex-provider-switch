@@ -135,19 +135,22 @@ set_model_id() {
   fi
 }
 
-# Context size (max_tokens)
-get_max_tokens() {
+# Context size
+get_context_display() {
   if [ "$BACKEND" = "claude" ]; then
-    cl_get_max_tokens
+    cl_get_context_1m
   else
-    co_get_max_tokens
-  fi
-}
-set_max_tokens() {
-  if [ "$BACKEND" = "claude" ]; then
-    cl_set_max_tokens "$1"
-  else
-    co_set_max_tokens "$1"
+    local t
+    t=$(co_get_max_tokens)
+    if [ -n "$t" ]; then
+      if [ "$t" -ge 1048576 ] 2>/dev/null; then
+        echo "$((t / 1048576))M ($t)"
+      elif [ "$t" -ge 1024 ] 2>/dev/null; then
+        echo "$((t / 1024))K ($t)"
+      else
+        echo "$t"
+      fi
+    fi
   fi
 }
 
