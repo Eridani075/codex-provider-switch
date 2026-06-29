@@ -43,12 +43,12 @@ _do_switch_claude() {
   cur_url=$(cl_get_provider_url)
   cur_token=$(cl_get_provider_token)
 
-  echo -e "${CYAN}切换 Claude Code Provider${NC}"
+  echo -e "${BOLD}${CYAN}切换 Claude Code Provider${NC}"
   echo ""
-  echo -e "  当前 URL:   ${GREEN}${cur_url:-未设置}${NC}"
+  echo -e "  当前 URL:    ${GREEN}${cur_url:-未设置}${NC}"
   local masked="(未设置)"
   [ -n "$cur_token" ] && masked="${cur_token:0:8}****"
-  echo -e "  当前 Token: ${GREEN}${masked}${NC}"
+  echo -e "  当前 API Key: ${GREEN}${masked}${NC}"
   echo ""
   echo -e "  ${DIM}留空保持不变${NC}"
   echo ""
@@ -69,7 +69,7 @@ _do_switch_claude() {
 }
 
 do_add() {
-  echo -e "${CYAN}添加新 Provider${NC}"
+  echo -e "${BOLD}${CYAN}添加新 Provider${NC}"
   echo ""
 
   read -rp "Provider ID (英文, 如 my-api): " provider_id
@@ -203,7 +203,7 @@ do_show_config() {
   local backend_label="Codex"
   [ "$BACKEND" = "claude" ] && backend_label="Claude Code"
 
-  echo -e "${CYAN}${backend_label} 配置摘要${NC}"
+  echo -e "${BOLD}${CYAN}${backend_label} 配置摘要${NC}"
   echo ""
 
   if [ "$BACKEND" = "claude" ]; then
@@ -211,12 +211,13 @@ do_show_config() {
     url=$(cl_get_provider_url)
     token=$(cl_get_provider_token)
     model=$(get_current_model)
+    ctx=$(cl_get_context_1m)
 
     echo -e "${BOLD}Provider:${NC}"
-    echo -e "  URL:   ${GREEN}${url:-未设置}${NC}"
+    echo -e "  URL:     ${GREEN}${url:-未设置}${NC}"
     local masked="(未设置)"
     [ -n "$token" ] && masked="${token:0:8}****"
-    echo -e "  Token: ${GREEN}${masked}${NC}"
+    echo -e "  API Key: ${GREEN}${masked}${NC}"
     echo ""
 
     echo -e "${BOLD}模型:${NC}"
@@ -229,34 +230,38 @@ do_show_config() {
         echo -e "  ${marker} ${BOLD}${tier}${NC}: ${GREEN}${mid:-未设置}${NC}"
       done <<< "$models_raw"
     fi
-    ctx=$(cl_get_context_1m)
-    echo -e "\n  上下文: ${GREEN}${ctx}${NC}"
+    echo ""
+    echo -e "${BOLD}上下文:${NC}"
+    echo -e "  ${GREEN}${ctx}${NC}"
   else
     local current model ctx
     current=$(get_current_provider)
     model=$(get_current_model)
     ctx=$(get_context_display)
 
-    echo -e "  provider = ${BOLD}${GREEN}${current}${NC}"
-    echo -e "  model    = ${BOLD}${GREEN}${model}${NC}"
-    [ -n "$ctx" ] && echo -e "  上下文   = ${BOLD}${GREEN}${ctx}${NC}"
+    echo -e "${BOLD}基本配置:${NC}"
+    echo -e "  provider: ${GREEN}${current}${NC}"
+    echo -e "  model:    ${GREEN}${model}${NC}"
+    [ -n "$ctx" ] && echo -e "  上下文:   ${GREEN}${ctx}${NC}"
 
     echo ""
     local providers
     providers=$(parse_providers)
     if [[ -n "$providers" ]]; then
       echo -e "${BOLD}已配置的 Providers:${NC}"
-      echo "$providers" | while IFS='|' read -r key name url wire token model; do
+      local first=1
+      while IFS='|' read -r key name url wire token model; do
+        [ "$first" -eq 0 ] && echo ""
+        first=0
         local marker=" "
         [[ "$key" == "${current% (默认)}" ]] && marker="${GREEN}✓${NC}"
         local masked_token="****"
         [[ -z "$token" ]] && masked_token="(无)"
         echo -e "  ${marker} ${BOLD}${key}${NC}"
-        echo -e "    名称: ${name}"
-        echo -e "    URL:  ${url}"
-        echo -e "    Key:  ${masked_token}"
-        echo ""
-      done
+        echo -e "    名称:   ${GREEN}${name}${NC}"
+        echo -e "    URL:    ${GREEN}${url}${NC}"
+        echo -e "    API Key: ${GREEN}${masked_token}${NC}"
+      done <<< "$providers"
     else
       echo -e "${YELLOW}无自定义 provider${NC}"
     fi
@@ -331,7 +336,8 @@ do_model() {
   base_url=$(echo "$provider_line" | cut -d'|' -f3)
   token=$(echo "$provider_line" | cut -d'|' -f5)
 
-  echo -e "${CYAN}当前模型: ${BOLD}${GREEN}${current}${NC}"
+  echo -e "${BOLD}${CYAN}Codex 模型配置${NC}"
+  echo -e "  当前模型: ${GREEN}${current}${NC}"
   echo -e "${DIM}从 ${base_url}/models 获取模型列表...${NC}"
   echo ""
 
@@ -386,7 +392,7 @@ do_show_all() {
   current=$(get_current_provider)
   current="${current% (默认)}"
 
-  echo -e "${CYAN}显示所有会话${NC}"
+  echo -e "${BOLD}${CYAN}显示所有会话${NC}"
   echo -e "  将所有会话统一到当前 provider: ${BOLD}${GREEN}${current}${NC}"
   echo ""
 
@@ -440,7 +446,7 @@ do_model_claude() {
   current_tier=$(_cl_read "model")
   [ -z "$current_tier" ] && current_tier="(未设置)"
 
-  echo -e "${CYAN}Claude Code 模型配置${NC}"
+  echo -e "${BOLD}${CYAN}Claude Code 模型配置${NC}"
   echo -e "  当前激活: ${BOLD}${GREEN}${current_tier}${NC}"
   echo ""
 
@@ -471,7 +477,7 @@ do_model_claude() {
     *编辑*|*✏️*)
       # Pick which tier to edit
       echo ""
-      echo -e "${CYAN}编辑模型 ID${NC}"
+      echo -e "${BOLD}${CYAN}编辑模型 ID${NC}"
       local edit_options=()
       while IFS='|' read -r tier mid active; do
         local label="${tier}"
@@ -567,7 +573,7 @@ _do_context_claude() {
   local current
   current=$(cl_get_context_1m)
 
-  echo -e "${CYAN}Claude Code 上下文大小${NC}"
+  echo -e "${BOLD}${CYAN}Claude Code 上下文大小${NC}"
   echo -e "  当前: ${BOLD}${GREEN}${current}${NC}"
   echo ""
 
@@ -588,7 +594,7 @@ _do_context_codex() {
   local current
   current=$(co_get_max_tokens)
 
-  echo -e "${CYAN}Codex 上下文大小 (max_tokens)${NC}"
+  echo -e "${BOLD}${CYAN}Codex 上下文大小${NC}"
   if [ -n "$current" ]; then
     local display
     display=$(get_context_display)
@@ -629,7 +635,7 @@ _do_context_codex() {
 # ── Apply / Discard staging ─────────────────────────────
 
 do_apply() {
-  echo -e "${CYAN}写入配置${NC}"
+  echo -e "${BOLD}${CYAN}写入配置${NC}"
   echo ""
 
   if [ "$BACKEND" = "claude" ]; then
@@ -656,7 +662,7 @@ do_apply() {
 }
 
 do_discard() {
-  echo -e "${CYAN}放弃更改${NC}"
+  echo -e "${BOLD}${CYAN}放弃更改${NC}"
   echo ""
 
   if [ "$BACKEND" = "claude" ]; then

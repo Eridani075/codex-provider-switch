@@ -7,13 +7,33 @@ RED=$'\033[0;31m'
 GREEN=$'\033[0;32m'
 YELLOW=$'\033[0;33m'
 CYAN=$'\033[0;36m'
-MAGENTA=$'\033[0;35m'
 BOLD=$'\033[1m'
 DIM=$'\033[2m'
 NC=$'\033[0m'
 
 HAS_FZF=0
 command -v fzf >/dev/null 2>&1 && HAS_FZF=1
+
+# CJK-aware display width (approximate: each CJK char = 2 cols)
+_display_width() {
+  python3 -c "
+import sys
+s = sys.argv[1]
+w = 0
+for c in s:
+    if ord(c) > 0x2E80:
+        w += 2
+    else:
+        w += 1
+print(w)
+" "$1" 2>/dev/null
+}
+
+# Repeat a character N times
+_repeat_char() {
+  local char="$1" count="$2"
+  printf "%0.s${char}" $(seq 1 "$count")
+}
 
 # Universal chooser. Usage: choose "prompt" "opt1" "opt2" ...
 # Prints selected option to stdout.
@@ -60,13 +80,15 @@ pick_provider() {
   fi
 
   if [[ "$HAS_FZF" -eq 1 ]]; then
+    local header
+    header=$(printf "%-20s %-30s %s" "名称" "Base URL" "状态")
     local selected
     selected=$(echo "$providers" | while IFS='|' read -r key name url wire token model; do
       local marker=""
       [[ "$key" == "$current" ]] && marker=" ${GREEN}✓ 当前${NC}"
       printf "%-20s %-30s %s\n" "$name" "$url" "$marker"
     done | fzf --prompt="选择 Provider > " --height=20 --reverse --no-multi --border \
-               --ansi --header="名称                  Base URL                     状态")
+               --ansi --header="$header")
 
     [[ -z "$selected" ]] && echo "" && return
 
@@ -80,12 +102,12 @@ pick_provider() {
     local i=1
     echo -e "${CYAN}选择 Provider:${NC}" >&2
     echo "" >&2
-    echo "$providers" | while IFS='|' read -r key name url wire token model; do
+    while IFS='|' read -r key name url wire token model; do
       local marker=""
       [[ "$key" == "$current" ]] && marker=" ${GREEN}✓ 当前${NC}"
       echo -e "  ${BOLD}${i})${NC} ${name} — ${url}${marker}" >&2
       ((i++))
-    done
+    done <<< "$providers"
     echo "" >&2
 
     local count
@@ -98,10 +120,4 @@ pick_provider() {
       echo ""
     fi
   fi
-}
-
-confirm() {
-  local msg="$1"
-  read -rp "$msg" yn
-  [[ "$yn" =~ ^[Yy] ]]
 }

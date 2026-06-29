@@ -18,47 +18,6 @@ init_staging_claude
 
 # ── startup summary ────────────────────────────────────
 
-_show_codex_info() {
-  [ ! -f "$CODEX_CONFIG" ] && return
-  local provider model ctx provider_count
-  provider=$(co_get_current_provider)
-  model=$(co_get_current_model)
-  ctx=$(get_context_display)
-  provider_count=$(co_parse_providers | wc -l)
-
-  echo -e "  ${BOLD}Codex${NC}  ${DIM}${CODEX_CONFIG}${NC}"
-  echo -e "    provider: ${GREEN}${provider}${NC}"
-  echo -e "    model:    ${GREEN}${model}${NC}"
-  [ -n "$ctx" ] && echo -e "    上下文:   ${GREEN}${ctx}${NC}"
-  echo -e "    providers: ${GREEN}${provider_count}${NC} 个"
-}
-
-_show_claude_info() {
-  [ ! -f "$CLAUDE_CONFIG" ] && return
-  local url tier ctx
-  url=$(cl_get_provider_url)
-  tier=$(_cl_read "model")
-  ctx=$(cl_get_context_1m)
-
-  echo -e "  ${BOLD}Claude Code${NC}  ${DIM}${CLAUDE_CONFIG}${NC}"
-  echo -e "    URL:   ${GREEN}${url:-未设置}${NC}"
-  echo -e "    激活: ${GREEN}${tier:-未设置}${NC}"
-
-  local models_raw
-  models_raw=$(cl_get_models)
-  if [ -n "$models_raw" ]; then
-    while IFS='|' read -r mtier mid active; do
-      local mark=" "
-      [ -n "$active" ] && mark="${GREEN}✓${NC}"
-      echo -e "    ${mark} ${mtier}: ${GREEN}${mid:-未设置}${NC}"
-    done <<< "$models_raw"
-  fi
-
-  local ctx
-  ctx=$(cl_get_context_1m)
-  echo -e "    上下文: ${GREEN}${ctx}${NC}"
-}
-
 show_startup_summary() {
   local has_codex=0 has_claude=0
   [ -f "$CODEX_CONFIG" ] && has_codex=1
@@ -68,12 +27,55 @@ show_startup_summary() {
     return
   fi
 
+  local title="当前配置"
+  local tw
+  tw=$(_display_width "$title")
+  local border=$(_repeat_char "━" $((tw + 4)))
+
   echo ""
-  echo -e "${CYAN}━━━ 当前配置 ━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${BOLD}${CYAN}━━${title}━━${NC}"
   echo ""
-  [ "$has_codex" -eq 1 ] && _show_codex_info && echo ""
-  [ "$has_claude" -eq 1 ] && _show_claude_info && echo ""
-  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+  if [ "$has_codex" -eq 1 ]; then
+    local provider model ctx provider_count
+    provider=$(co_get_current_provider)
+    model=$(co_get_current_model)
+    ctx=$(get_context_display)
+    provider_count=$(co_parse_providers | wc -l)
+
+    echo -e "  ${BOLD}Codex${NC}  ${DIM}${CODEX_CONFIG}${NC}"
+    echo -e "    provider:  ${GREEN}${provider}${NC}"
+    echo -e "    model:     ${GREEN}${model}${NC}"
+    [ -n "$ctx" ] && echo -e "    上下文:    ${GREEN}${ctx}${NC}"
+    echo -e "    providers: ${GREEN}${provider_count}${NC} 个"
+    echo ""
+  fi
+
+  if [ "$has_claude" -eq 1 ]; then
+    local url tier ctx
+    url=$(cl_get_provider_url)
+    tier=$(_cl_read "model")
+    ctx=$(cl_get_context_1m)
+
+    echo -e "  ${BOLD}Claude Code${NC}  ${DIM}${CLAUDE_CONFIG}${NC}"
+    echo -e "    URL:   ${GREEN}${url:-未设置}${NC}"
+    echo -e "    激活:  ${GREEN}${tier:-未设置}${NC}"
+
+    local models_raw
+    models_raw=$(cl_get_models)
+    if [ -n "$models_raw" ]; then
+      while IFS='|' read -r mtier mid active; do
+        local mark=" "
+        [ -n "$active" ] && mark="${GREEN}✓${NC}"
+        echo -e "    ${mark} ${mtier}: ${GREEN}${mid:-未设置}${NC}"
+      done <<< "$models_raw"
+    fi
+
+    echo -e "    上下文: ${GREEN}${ctx}${NC}"
+    echo ""
+  fi
+
+  echo -e "${BOLD}${CYAN}${border}${NC}"
 }
 
 show_startup_summary
@@ -105,28 +107,28 @@ show_codex_menu() {
   local choice
   choice=$(choose "操作 > " \
     "🔄  切换 Provider" \
-    "🤖  切换模型" \
     "➕  添加 Provider" \
-    "✏️   编辑 Provider" \
-    "🗑️   删除 Provider" \
-    "📋  显示所有会话" \
-    "🔓  解锁插件市场" \
+    "✏️  编辑 Provider" \
+    "🚫  删除 Provider" \
+    "🤖  切换模型" \
     "📏  设置上下文大小" \
-    "📋  查看当前配置" \
+    "📑  显示所有会话" \
+    "🔓  解锁插件市场" \
+    "🔍  查看当前配置" \
     "💾  写入配置文件" \
-    "🗑️   放弃更改" \
-    "↩️   返回" \
+    "⏪  放弃更改" \
+    "↩️  返回" \
     "❌  退出")
 
   case "$choice" in
     *切换*Provider*)  do_switch; show_codex_menu ;;
-    *模型*)          do_model; show_codex_menu ;;
     *添加*)          do_add; show_codex_menu ;;
     *编辑*)          do_edit; show_codex_menu ;;
     *删除*Provider*) do_delete; show_codex_menu ;;
+    *模型*)          do_model; show_codex_menu ;;
+    *上下文*|*📏*)    do_context; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
     *显示*会话*)     do_show_all; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
     *解锁*)          do_unlock; show_codex_menu ;;
-    *上下文*|*📏*)    do_context; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
     *查看*配置*)     do_show_config; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
     *写入*配置*)     do_apply; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
     *放弃*更改*)     do_discard; echo ""; read -rp "按回车返回..."; show_codex_menu ;;
@@ -152,10 +154,10 @@ show_claude_menu() {
     "🔄  切换 Provider" \
     "🤖  切换模型" \
     "📏  设置上下文大小" \
-    "📋  查看当前配置" \
+    "🔍  查看当前配置" \
     "💾  写入配置文件" \
-    "🗑️   放弃更改" \
-    "↩️   返回" \
+    "⏪  放弃更改" \
+    "↩️  返回" \
     "❌  退出")
 
   case "$choice" in
