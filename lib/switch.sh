@@ -27,7 +27,7 @@ do_switch() {
 
   set_current_provider "$new_key"
   echo -e "${GREEN}已切换到: ${BOLD}${new_key}${NC}"
-  echo -e "${DIM}提示: 使用「显示所有会话」可查看跨 provider 的全部聊天记录${NC}"
+  [ "$BACKEND" != "claude" ] && echo -e "${DIM}提示: 使用「显示所有会话」可查看跨 provider 的全部聊天记录${NC}"
 }
 
 do_add() {
@@ -109,16 +109,20 @@ do_delete() {
 
   remove_provider "$key"
 
-  local current
-  current=$(get_current_provider)
-  if [ "$current" = "$key" ]; then
-    local tmp
-    tmp=$(mktemp)
-    sed '/^[[:space:]]*model_provider[[:space:]]*=/d' "$CODEX_CONFIG" > "$tmp"
-    mv "$tmp" "$CODEX_CONFIG"
-    echo -e "${YELLOW}已删除当前 provider，model_provider 已清除${NC}"
-  else
+  if [ "$BACKEND" = "claude" ]; then
     echo -e "${GREEN}已删除: ${key}${NC}"
+  else
+    local current
+    current=$(get_current_provider)
+    if [ "$current" = "$key" ]; then
+      local tmp
+      tmp=$(mktemp)
+      sed '/^[[:space:]]*model_provider[[:space:]]*=/d' "$CODEX_CONFIG" > "$tmp"
+      mv "$tmp" "$CODEX_CONFIG"
+      echo -e "${YELLOW}已删除当前 provider，model_provider 已清除${NC}"
+    else
+      echo -e "${GREEN}已删除: ${key}${NC}"
+    fi
   fi
 }
 
@@ -322,4 +326,37 @@ do_show_all() {
   else
     echo -e "${RED}找不到 sync.py${NC}"
   fi
+}
+
+do_switch_backend() {
+  local has_codex=0 has_claude=0
+  [ -f "$CODEX_CONFIG" ] && has_codex=1
+  [ -f "$CLAUDE_CONFIG" ] && has_claude=1
+
+  local options=()
+  if [ "$has_codex" -eq 1 ]; then
+    local marker=""
+    [ "$BACKEND" = "codex" ] && marker=" ${GREEN}✓${NC}"
+    options+=("Codex${marker}")
+  fi
+  if [ "$has_claude" -eq 1 ]; then
+    local marker=""
+    [ "$BACKEND" = "claude" ] && marker=" ${GREEN}✓${NC}"
+    options+=("Claude Code${marker}")
+  fi
+  options+=("↩️  保持不变")
+
+  if [ ${#options[@]} -le 1 ]; then
+    echo -e "${YELLOW}只检测到一个后端，无需切换${NC}"
+    return
+  fi
+
+  local choice
+  choice=$(choose "切换后端 > " "${options[@]}")
+
+  case "$choice" in
+    *Codex*)    BACKEND="codex";  echo -e "${GREEN}已切换到: ${BOLD}Codex${NC}" ;;
+    *Claude*)   BACKEND="claude"; echo -e "${GREEN}已切换到: ${BOLD}Claude Code${NC}" ;;
+    *)          return ;;
+  esac
 }
