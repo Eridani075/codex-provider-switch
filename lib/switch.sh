@@ -199,20 +199,20 @@ fetch_models() {
     response=$(curl -sS --fail --max-time 10 \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      "$url" 2>&1)
+      "$url" 2>&1) || true
   else
     response=$(curl -sS --fail --max-time 10 \
       -H "Content-Type: application/json" \
-      "$url" 2>&1)
+      "$url" 2>&1) || true
   fi
 
-  if [ $? -ne 0 ]; then
+  if [ -z "$response" ]; then
     echo "请求失败: $url" >&2
-    echo "$response" >&2
     return 1
   fi
 
-  python3 -c "
+  local result
+  result=$(python3 -c "
 import sys, json
 try:
     data = json.loads(sys.stdin.read())
@@ -227,7 +227,9 @@ try:
         sys.exit(1)
 except Exception:
     sys.exit(1)
-" <<< "$response"
+" <<< "$response") || true
+
+  echo "$result"
 }
 
 do_model() {
